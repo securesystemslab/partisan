@@ -382,6 +382,7 @@ void initializeWriteBitcodePassPass(PassRegistry&);
 void initializeWriteThinLTOBitcodePass(PassRegistry&);
 void initializeXRayInstrumentationPass(PassRegistry&);
 void initializeMIRCanonicalizerPass(PassRegistry &);
+void initializeControlFlowDiversityPass(PassRegistry &);
 
 } // end namespace llvm
 

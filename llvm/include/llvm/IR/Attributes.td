@@ -155,6 +155,9 @@ def StrictFP : EnumAttr<"strictfp">;
 /// Hidden pointer to structure to return.
 def StructRet : EnumAttr<"sret">;
 
+/// Disable control flow diversity.
+def NoControlFlowDiversity : EnumAttr<"no_cf_diversity">;
+
 /// AddressSanitizer is on.
 def SanitizeAddress : EnumAttr<"sanitize_address">;
 

@@ -58,6 +58,7 @@ void llvm::initializeIPO(PassRegistry &Registry) {
   initializeSampleProfileLoaderLegacyPassPass(Registry);
   initializeFunctionImportLegacyPassPass(Registry);
   initializeWholeProgramDevirtPass(Registry);
+  initializeControlFlowDiversityPass(Registry);
 }
 
 void LLVMInitializeIPO(LLVMPassRegistryRef R) {

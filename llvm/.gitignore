@@ -20,6 +20,8 @@
 .sw?
 #OS X specific files.
 .DS_store
+# IntelliJ
+.idea
 
 # Nested build directory
 /build

@@ -211,6 +211,9 @@ ModulePass *createPartialInliningPass();
 //
 ModulePass *createMetaRenamerPass();
 
+/// \brief This pass implements control flow diversity.
+ModulePass *createControlFlowDiversityPass();
+
 //===----------------------------------------------------------------------===//
 /// createBarrierNoopPass - This pass is purely a module pass barrier in a pass
 /// manager.

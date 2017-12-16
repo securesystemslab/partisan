@@ -198,6 +198,11 @@ static cl::opt<bool> ClInstrumentAtomics(
     cl::desc("instrument atomic instructions (rmw, cmpxchg)"), cl::Hidden,
     cl::init(true));
 
+static cl::opt<bool> ClInstrumentMemIntrinsics(
+    "asan-instrument-memintrinsics",
+    cl::desc("Instrument memory intrinsics (memset/memcpy/memmove)"),
+    cl::Hidden, cl::init(true));
+
 static cl::opt<bool> ClAlwaysSlowPath(
     "asan-always-slow-path",
     cl::desc("use instrumentation with slow path for all accesses"), cl::Hidden,
@@ -1144,6 +1149,9 @@ Value *AddressSanitizer::memToShadow(Value *Shadow, IRBuilder<> &IRB) {
 
 // Instrument memset/memmove/memcpy
 void AddressSanitizer::instrumentMemIntrinsic(MemIntrinsic *MI) {
+  if (!ClInstrumentMemIntrinsics)
+    return;
+
   IRBuilder<> IRB(MI);
   if (isa<MemTransferInst>(MI)) {
     IRB.CreateCall(
