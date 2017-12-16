@@ -471,6 +471,11 @@ static void initTargetOptions(llvm::TargetOptions &Options,
           Entry.IgnoreSysRoot ? Entry.Path : HSOpts.Sysroot + Entry.Path);
 }
 
+static void addControlFlowDiversityPass(const PassManagerBuilder &Builder,
+                                        legacy::PassManagerBase &PM) {
+  PM.add(createControlFlowDiversityPass());
+}
+
 void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                                       legacy::FunctionPassManager &FPM) {
   // Handle disabling of all LLVM passes, where we want to preserve the
@@ -533,6 +538,12 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addObjCARCAPElimPass);
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
                            addObjCARCOptPass);
+  }
+
+  // The CFD pass should be added before sanitizers to make it work in debug mode (O0)
+  if (CodeGenOpts.ControlFlowDiversity) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_AfterInliner, addControlFlowDiversityPass);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0, addControlFlowDiversityPass);
   }
 
   if (LangOpts.Sanitize.has(SanitizerKind::LocalBounds)) {

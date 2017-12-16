@@ -308,6 +308,9 @@ CODEGENOPT(GnuPubnames, 1, 0)
 
 CODEGENOPT(NoPLT, 1, 0)
 
+/// Randomize control flow at runtime
+CODEGENOPT(ControlFlowDiversity, 1, 0)
+
 #undef CODEGENOPT
 #undef ENUM_CODEGENOPT
 #undef VALUE_CODEGENOPT

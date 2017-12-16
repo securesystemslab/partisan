@@ -451,6 +451,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   }
   Opts.OptimizationLevel = OptimizationLevel;
 
+  Opts.ControlFlowDiversity = Args.hasArg(OPT_control_flow_diversity);
+
   // At O0 we want to fully disable inlining outside of cases marked with
   // 'alwaysinline' that are required for correctness.
   Opts.setInlining((Opts.OptimizationLevel == 0)

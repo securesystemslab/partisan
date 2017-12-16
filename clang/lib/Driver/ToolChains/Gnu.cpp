@@ -310,6 +310,16 @@ static bool getPIE(const ArgList &Args, const toolchains::Linux &ToolChain) {
   return A->getOption().matches(options::OPT_pie);
 }
 
+static void addControlFlowRT(const ToolChain &TC, const ArgList &Args,
+                             ArgStringList &CmdArgs) {
+  // Control-flow runtime requires pthread library.
+  CmdArgs.push_back("-lpthread");
+
+  auto LibExt = Args.hasArg(options::OPT_shared) ? ".so" : ".a";
+  auto ControlFlowRT = TC.getDriver().Dir + "/../lib/libcontrol_flow_rt" + LibExt;
+  CmdArgs.push_back(Args.MakeArgString(ControlFlowRT));
+}
+
 void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                            const InputInfo &Output,
                                            const InputInfoList &Inputs,
@@ -464,6 +474,10 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs, JA);
   // The profile runtime also needs access to system libraries.
   getToolChain().addProfileRTLibs(Args, CmdArgs);
+
+  if (Args.hasArg(options::OPT_control_flow_diversity)) {
+    addControlFlowRT(getToolChain(), Args, CmdArgs);
+  }
 
   if (D.CCCIsCXX() &&
       !Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {

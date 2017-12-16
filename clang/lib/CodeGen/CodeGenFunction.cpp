@@ -846,6 +846,10 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
       SanOpts.Mask &= ~Attr->getMask();
   }
 
+  if (D && D->hasAttr<NoSanitizeAttr>()) {
+    Fn->addFnAttr(llvm::Attribute::NoControlFlowDiversity);
+  }
+
   // Apply sanitizer attributes to the function.
   if (SanOpts.hasOneOf(SanitizerKind::Address | SanitizerKind::KernelAddress))
     Fn->addFnAttr(llvm::Attribute::SanitizeAddress);

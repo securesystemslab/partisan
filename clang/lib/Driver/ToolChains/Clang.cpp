@@ -4001,6 +4001,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // Forward -cl options to -cc1
   RenderOpenCLOptions(Args, CmdArgs);
 
+  if (Args.hasArg(options::OPT_control_flow_diversity)) {
+    CmdArgs.push_back("-control-flow-diversity");
+  }
+
   // Forward -f options with positive and negative forms; we translate
   // these by hand.
   if (Arg *A = getLastProfileSampleUseArg(Args)) {
