@@ -528,13 +528,13 @@ void ControlFlowDiversity::emitRuntimeInit(Module& M, StructType* structTy, MInf
   LLVMContext& C = M.getContext();
 
   // This function is provided by the [ControlFlowRuntime.c]
+  // void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count)
   Constant* runtimeHook = M.getOrInsertFunction(
       "__cf_register",
       Type::getVoidTy(C),             // return type
       PointerType::get(structTy, 0),  // ptr to desc array
       PointerType::get(Type::getInt64Ty(C), 0), // ptr to randomized ptr array
-      Type::getInt32Ty(C),            // function count
-      (Type*) 0);                     // end
+      Type::getInt32Ty(C));           // function count
 
   // Init function
   FunctionType* initFnTy = FunctionType::get(Type::getVoidTy(C), /* isVarArg */ false);

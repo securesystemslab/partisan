@@ -49,7 +49,7 @@ static MachineOperand& getRandPtrGlobal(MachineBasicBlock& MBB) {
 }
 
 bool ControlFlowTrampolineFixup::runOnMachineFunction(MachineFunction& MF) {
-  if (!MF.getFunction()->hasFnAttribute("cf-trampoline"))
+  if (!MF.getFunction().hasFnAttribute("cf-trampoline"))
     return false;
 
   assert (MF.size() == 1 && "trampoline must not have control flow");
