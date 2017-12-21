@@ -542,7 +542,7 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
 
   // The CFD pass should be added before sanitizers to make it work in debug mode (O0)
   if (CodeGenOpts.ControlFlowDiversity) {
-    PMBuilder.addExtension(PassManagerBuilder::EP_AfterInliner, addControlFlowDiversityPass);
+    PMBuilder.addExtension(PassManagerBuilder::EP_CGSCCOptimizerLate, addControlFlowDiversityPass);
     PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0, addControlFlowDiversityPass);
   }
 

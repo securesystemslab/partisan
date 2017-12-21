@@ -502,7 +502,6 @@ void PassManagerBuilder::populateModulePassManager(
     Inliner = nullptr;
     RunInliner = true;
   }
-  addExtensionsToPM(EP_AfterInliner, MPM);
 
   MPM.add(createPostOrderFunctionAttrsLegacyPass());
   if (OptLevel > 2)

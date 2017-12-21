@@ -73,9 +73,6 @@ public:
     /// just before the main module-level optimization passes.
     EP_ModuleOptimizerEarly,
 
-    /// Run pass right after inline.
-    EP_AfterInliner,
-
     /// EP_LoopOptimizerEnd - This extension point allows adding loop passes to
     /// the end of the loop optimizer.
     EP_LoopOptimizerEnd,
