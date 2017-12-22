@@ -99,11 +99,11 @@ private:
   }
 
   GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
-  Constant* createFnPtrInit(Module& M, ArrayRef<Function*> replicas);
+  Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
   
   StructType* emitDescTy(Module& M);
   Constant* createFnDescInit(Module& M, StructType* structTy, ArrayRef<FInfo> infos);
-  GlobalVariable* emitDescArray(Module& M, StructType* structTy, size_t size, Constant* init);
+  GlobalVariable* emitDescArray(Module& M, StructType* structTy, size_t count, Constant* init);
   void emitRuntimeInit(Module& M, StructType* structTy, MInfo& mi);
   void addTraceStatements(Function* F);
 };
