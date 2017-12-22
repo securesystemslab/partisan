@@ -475,10 +475,6 @@ bool SanitizerCoverageModule::runOnFunction(Function &F) {
   // Don't touch available_externally functions, their actual body is elewhere.
   if (F.getLinkage() == GlobalValue::AvailableExternallyLinkage)
     return false;
-  // Don't instrument control-flow trampolines and the fast variant 0
-  if (F.hasFnAttribute("cf-trampoline") ||
-      F.getFnAttribute("cf-variant").getValueAsString() == "0")
-    return false;
   // Don't instrument MSVC CRT configuration helpers. They may run before normal
   // initialization.
   if (F.getName() == "__local_stdio_printf_options" ||
