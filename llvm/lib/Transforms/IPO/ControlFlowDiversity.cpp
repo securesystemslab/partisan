@@ -242,9 +242,9 @@ Function* ControlFlowDiversity::emitVariant(Function* F, StringRef origName, uns
   // Set name and attributes
   auto idxStr = std::to_string(variantIdx);
   NF->setName(origName +"_"+ idxStr);
-  NF->addFnAttr("cf-variant", idxStr);
   NF->copyAttributesFrom(F);
   NF->setLinkage(GlobalValue::PrivateLinkage); // must be after "copyAttributesFrom" (might change visibility)
+  NF->addFnAttr("cf-variant", idxStr);
 
   // TODO(yln): Should we remove profiling metadata from variants?
 //  NF->eraseMetadata(LLVMContext::MD_prof);
