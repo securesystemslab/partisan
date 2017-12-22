@@ -190,7 +190,11 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   return true;
 }
 
-static bool hasMemoryAccess(const Function &F) {
+static uint64_t getEntryCount(const Function& F) {
+  return F.getEntryCount().getValueOr(0);
+}
+
+static bool hasMemoryAccess(const Function& F) {
   switch (DiversifyByMemoryAccess) {
     case ByMemoryAccess::All: return true;
     case ByMemoryAccess::IgnoreNoAccess: return !F.doesNotAccessMemory();
@@ -199,7 +203,7 @@ static bool hasMemoryAccess(const Function &F) {
   llvm_unreachable("unexpected enum value");
 }
 
-static bool isHotEnough(const Function &F) {
+static bool isHotEnough(const Function& F) {
   switch (DiversifyByHotness) {
     case ByHotness::All: return true;
     case ByHotness::IgnoreCold: return !F.hasFnAttribute(llvm::Attribute::Cold);
@@ -208,10 +212,9 @@ static bool isHotEnough(const Function &F) {
   llvm_unreachable("unexpected enum value");
 }
 
-static bool shouldRandomize(const Function &F) {
+static bool shouldRandomize(const Function& F) {
   return !F.hasFnAttribute(Attribute::NoControlFlowDiversity)
-      && F.getEntryCount().hasValue()
-      && F.getEntryCount().getValue() >= MinimumEntryCount
+      && getEntryCount(F) >= MinimumEntryCount
       && isHotEnough(F)
       && hasMemoryAccess(F);
 }
@@ -493,7 +496,7 @@ Constant* ControlFlowDiversity::createFnDescInit(Module& M, StructType* structTy
   for (const FInfo& i : infos) {
     Constant* variantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, i.fnPtrArray, indices);
     Constant* probArrayPtr = ConstantExpr::getGetElementPtr(nullptr, emitProbArray(M, i), indices);
-    ConstantInt* entryCount = ConstantInt::get(Type::getInt64Ty(C), i.original->getEntryCount().getValue());
+    ConstantInt* entryCount = ConstantInt::get(Type::getInt64Ty(C), getEntryCount(*i.original));
     ConstantInt* variantCount = ConstantInt::get(Type::getInt32Ty(C), i.variants.size());
 
     std::vector<Constant*> fields {
