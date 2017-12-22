@@ -27,11 +27,11 @@ using namespace llvm;
 
 namespace {
 
-// Should really be uint64_t
-static cl::opt<unsigned> MinimumEntryCount(
-  "min-entry-count",
-  cl::desc("Minimum required entry count for a function to be diversified"),
-  cl::init(10));
+//// Should really be uint64_t
+//static cl::opt<unsigned> MinimumEntryCount(
+//  "min-entry-count",
+//  cl::desc("Minimum required entry count for a function to be diversified"),
+//  cl::init(10));
 
 enum class ByHotness { All, IgnoreCold, OnlyHot };
 static cl::opt<ByHotness> DiversifyByHotness(
@@ -128,7 +128,7 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   DEBUG(dbgs()
     << "Adding control flow diversity to module '" << M.getName()
     << "', instrumented/total # of functions: " << mi.funcs.size() << "/" << (mi.funcs.size() + mi.ignored.size()) << "\n"
-    << "  " << MinimumEntryCount.ArgStr << "=" << MinimumEntryCount << "\n"
+//    << "  " << MinimumEntryCount.ArgStr << "=" << MinimumEntryCount << "\n"
     << "  " << DiversifyByMemoryAccess.ArgStr << "=" << int(DiversifyByMemoryAccess.getValue()) << "\n"
     << "  " << DiversifyByHotness.ArgStr << "=" << int(DiversifyByHotness.getValue()) << "\n"
     << "Instrumented functions:"; for (auto i : mi.funcs) dbgs() << "\n  " << i.name;
@@ -190,10 +190,6 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   return true;
 }
 
-static uint64_t getEntryCount(const Function& F) {
-  return F.getEntryCount().getValueOr(0);
-}
-
 static bool hasMemoryAccess(const Function& F) {
   switch (DiversifyByMemoryAccess) {
     case ByMemoryAccess::All: return true;
@@ -214,7 +210,7 @@ static bool isHotEnough(const Function& F) {
 
 static bool shouldRandomize(const Function& F) {
   return !F.hasFnAttribute(Attribute::NoControlFlowDiversity)
-      && getEntryCount(F) >= MinimumEntryCount
+//    && getEntryCount(F) >= MinimumEntryCount
       && isHotEnough(F)
       && hasMemoryAccess(F);
 }
@@ -496,7 +492,7 @@ Constant* ControlFlowDiversity::createFnDescInit(Module& M, StructType* structTy
   for (const FInfo& i : infos) {
     Constant* variantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, i.fnPtrArray, indices);
     Constant* probArrayPtr = ConstantExpr::getGetElementPtr(nullptr, emitProbArray(M, i), indices);
-    ConstantInt* entryCount = ConstantInt::get(Type::getInt64Ty(C), getEntryCount(*i.original));
+    ConstantInt* entryCount = ConstantInt::get(Type::getInt64Ty(C), 0 /* no profile data */);
     ConstantInt* variantCount = ConstantInt::get(Type::getInt32Ty(C), i.variants.size());
 
     std::vector<Constant*> fields {
