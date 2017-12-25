@@ -210,7 +210,7 @@ static bool isHotEnough(const Function& F) {
 
 static bool shouldRandomize(const Function& F) {
   return !F.hasFnAttribute(Attribute::NoControlFlowDiversity)
-//    && getEntryCount(F) >= MinimumEntryCount
+      && !F.getName().contains(".module_ctor")
       && isHotEnough(F)
       && hasMemoryAccess(F);
 }
