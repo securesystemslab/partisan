@@ -528,7 +528,7 @@ void ControlFlowDiversity::emitRuntimeInit(Module& M, StructType* structTy, MInf
 
   // This function is provided by the [ControlFlowRuntime.c]
   // void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count)
-  Constant* runtimeHook = M.getOrInsertFunction(
+  Constant* moduleCtor = M.getOrInsertFunction(
       "__cf_register",
       Type::getVoidTy(C),             // return type
       PointerType::get(structTy, 0),  // ptr to desc array
@@ -537,15 +537,15 @@ void ControlFlowDiversity::emitRuntimeInit(Module& M, StructType* structTy, MInf
 
   // Init function
   FunctionType* initFnTy = FunctionType::get(Type::getVoidTy(C), /* isVarArg */ false);
-  Function* initFn = Function::Create(initFnTy, Function::PrivateLinkage, "cf_init_runtime", &M);
+  Function* initFn = Function::Create(initFnTy, Function::PrivateLinkage, "cf.module_ctor", &M);
 
   // Body
   BasicBlock* bb = BasicBlock::Create(C, "", initFn);
-  CallRuntimeHook(M, bb, runtimeHook, mi.fnDescArr, mi.randFnPtrArr, mi.funcs.size());
+  CallRuntimeHook(M, bb, moduleCtor, mi.fnDescArr, mi.randFnPtrArr, mi.funcs.size());
   ReturnInst::Create(C, bb);
 
   // Add to global ctors
-  appendToGlobalCtors(M, initFn, 0);
+  appendToGlobalCtors(M, initFn, /* Priority */ 0);
 }
 
 static void insertTraceFPrintf(Module& M, StringRef output, StringRef fieldName, Instruction* before) {
