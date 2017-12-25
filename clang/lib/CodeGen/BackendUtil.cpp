@@ -540,12 +540,6 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addObjCARCOptPass);
   }
 
-  // The CFD pass should be added before sanitizers to make it work in debug mode (O0)
-  if (CodeGenOpts.ControlFlowDiversity) {
-    PMBuilder.addExtension(PassManagerBuilder::EP_CGSCCOptimizerLate, addControlFlowDiversityPass);
-    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0, addControlFlowDiversityPass);
-  }
-
   if (LangOpts.Sanitize.has(SanitizerKind::LocalBounds)) {
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
                            addBoundsCheckingPass);
@@ -560,6 +554,14 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addSanitizerCoveragePass);
     PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                            addSanitizerCoveragePass);
+  }
+
+  // The CFD should come after coverage, but before the rest of sanitizers.
+  if (CodeGenOpts.ControlFlowDiversity) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                           addControlFlowDiversityPass);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                           addControlFlowDiversityPass);
   }
 
   if (LangOpts.Sanitize.has(SanitizerKind::Address)) {
