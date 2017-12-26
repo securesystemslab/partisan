@@ -366,8 +366,14 @@ static bool isNoSanitize(const Instruction* I) {
   return I->getMetadata("nosanitize") != nullptr;
 }
 
+static bool isSanCov(const Value* V) {
+  auto* U = dyn_cast<User>(V);
+  return V->getName().startswith("__sancov_gen_")
+      || (U && std::any_of(U->op_begin(), U->op_end(), isSanCov));
+}
+
 static bool shouldRemove(const Instruction* I) {
-  return I->use_empty() && isNoSanitize(I);
+  return I->use_empty() && isNoSanitize(I) && !isSanCov(I);
 }
 
 void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
