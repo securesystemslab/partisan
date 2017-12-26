@@ -148,6 +148,7 @@ static const char *const kAsanStackFreeNameTemplate = "__asan_stack_free_";
 static const char *const kAsanGenPrefix = "__asan_gen_";
 static const char *const kODRGenPrefix = "__odr_asan_gen_";
 static const char *const kSanCovGenPrefix = "__sancov_gen_";
+static const char *const kControlFlowGenPrefix = "__cf_gen_";
 static const char *const kAsanSetShadowPrefix = "__asan_set_shadow_";
 static const char *const kAsanPoisonStackMemoryName =
     "__asan_poison_stack_memory";
@@ -1121,6 +1122,7 @@ static bool GlobalWasGeneratedByCompiler(GlobalVariable *G) {
   // Do not instrument asan globals.
   if (G->getName().startswith(kAsanGenPrefix) ||
       G->getName().startswith(kSanCovGenPrefix) ||
+      G->getName().startswith(kControlFlowGenPrefix) ||
       G->getName().startswith(kODRGenPrefix))
     return true;
 

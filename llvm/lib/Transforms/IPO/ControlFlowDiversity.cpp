@@ -450,7 +450,7 @@ static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, s
   if (init == nullptr) {
     init = ConstantAggregateZero::get(arrayType);
   }
-  auto GV = new GlobalVariable(M, arrayType, constant, GlobalValue::PrivateLinkage, init, "cf_"+ name);
+  auto GV = new GlobalVariable(M, arrayType, constant, GlobalValue::PrivateLinkage, init, "__cf_gen_"+ name);
   GV->setExternallyInitialized(!constant);
   return GV;
 }
@@ -513,7 +513,7 @@ Constant* ControlFlowDiversity::createFnDescInit(Module& M, StructType* structTy
 
 GlobalVariable* ControlFlowDiversity::emitDescArray(Module& M, StructType* structTy, size_t count, Constant* init) {
   ArrayType* Ty = ArrayType::get(structTy, count);
-  return new GlobalVariable(M, Ty, /*isConstant*/true, GlobalValue::PrivateLinkage, init, "cf_descs");
+  return new GlobalVariable(M, Ty, /*isConstant*/true, GlobalValue::PrivateLinkage, init, "__cf_gen_descs");
 }
 
 static void CallRuntimeHook(Module& M, BasicBlock* bb, Constant* hook, GlobalVariable* descArr, GlobalVariable* randPtrArr, size_t size) {
@@ -692,7 +692,7 @@ void ControlFlowDiversity::addTraceStatements(Function* F) {
         ConstantExpr* gep = dyn_cast<ConstantExpr>(load->getOperand(0));
         if (!gep || gep->getNumOperands() != 3) continue;
         GlobalVariable* var = dyn_cast<GlobalVariable>(gep->getOperand(0));
-        if (var->getName() != "cf_rand_ptrs") continue;
+        if (var->getName() != "__cf_gen_rand_ptrs") continue;
 
         insertTraceFPrintf(M, "returned to "+ FName, "return_"+ FName, I.getNextNode());
       }

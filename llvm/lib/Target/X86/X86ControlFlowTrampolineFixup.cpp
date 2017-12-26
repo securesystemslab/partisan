@@ -41,7 +41,7 @@ FunctionPass* llvm::createX86ControlFlowTrampolineFixupPass() {
 static MachineOperand& getRandPtrGlobal(MachineBasicBlock& MBB) {
   for (auto& I : MBB) {
     for (auto& OP : I.operands()) {
-      if (OP.isGlobal() && OP.getGlobal()->getName() == "cf_rand_ptrs")
+      if (OP.isGlobal() && OP.getGlobal()->getName() == "__cf_gen_rand_ptrs")
         return OP;
     }
   }
