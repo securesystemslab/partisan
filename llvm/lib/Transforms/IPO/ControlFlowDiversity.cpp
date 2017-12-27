@@ -25,7 +25,6 @@ using namespace llvm;
 
 #define DEBUG_TYPE "control-flow-diversity"
 
-namespace {
 
 //// Should really be uint64_t
 //static cl::opt<unsigned> MinimumEntryCount(
@@ -58,6 +57,8 @@ static cl::opt<bool> AddTracingOutput(
   cl::desc("Add tracing output to function variants"),
   cl::init(false));
 
+
+namespace {
 
 struct FInfo {
   Function* original;
@@ -92,13 +93,7 @@ private:
   void randomizeCallSites(const FInfo &I, GlobalVariable *RandPtrArray);
   void convertOriginalToVariant(FInfo &I);
   void createVariant(FInfo& I);
-
-  void removeSanitizerAttributes(Function* F);
-  void removeSanitizerInstructions(Function* F);
-  void removeSanitizerChecks(Function* F) {
-    removeSanitizerAttributes(F);
-    removeSanitizerInstructions(F);
-  }
+  void removeSanitizerChecks(Function* F);
 
   GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
   Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
@@ -272,7 +267,6 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArr
 
   auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
   auto* Call = B.CreateCall(VarPtr, Args);
-  Call->setAttributes(F->getAttributes()); // TODO(yln): really need this?
   Call->setCallingConv(F->getCallingConv());
   Call->setTailCallKind(CallInst::TCK_MustTail);
 
@@ -356,12 +350,6 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   I.variants.push_back(NF);
 }
 
-void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
-  F->removeFnAttr(Attribute::SanitizeAddress);
-  F->removeFnAttr(Attribute::SanitizeMemory);
-  F->removeFnAttr(Attribute::SanitizeThread);
-}
-
 static bool isNoSanitize(const Instruction* I) {
   return I->getMetadata("nosanitize") != nullptr;
 }
@@ -376,8 +364,7 @@ static bool shouldRemove(const Instruction* I) {
   return I->use_empty() && isNoSanitize(I) && !isSanCov(I);
 }
 
-void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
-  const TargetTransformInfo& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
+static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI) {
   constexpr unsigned BonusInstThreshold = 1;
 
   // Mark initial set of instructions for removal
@@ -444,6 +431,15 @@ void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
     BasicBlock& BB = *(BBIt++); // Advance iterator since SimplifyCFG might delete the current BB
     simplifyCFG(&BB, TTI, BonusInstThreshold);
   }
+}
+
+void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
+  F->removeFnAttr(Attribute::SanitizeAddress);
+  F->removeFnAttr(Attribute::SanitizeMemory);
+  F->removeFnAttr(Attribute::SanitizeThread);
+
+  auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
+  removeSanitizerInstructions(F, TTI);
 }
 
 static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, size_t size, Constant* init) {
