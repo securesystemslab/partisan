@@ -350,6 +350,7 @@ void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
   F->removeFnAttr(Attribute::SanitizeHWAddress);
   F->removeFnAttr(Attribute::SanitizeMemory);
   F->removeFnAttr(Attribute::SanitizeThread);
+  F->removeFnAttr(Attribute::SafeStack);
 }
 
 static bool isNoSanitize(const Instruction* I) {
