@@ -92,6 +92,7 @@ private:
   void randomizeCallSites(const FInfo &I, GlobalVariable *RandPtrArray);
   void convertOriginalToVariant(FInfo &I);
   void createVariant(FInfo& I);
+  void removeSanitizerAttributes(Function *F);
   void removeSanitizerChecks(Function* F);
 
   GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
@@ -246,6 +247,7 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArr
   auto* NF = Function::Create(F->getFunctionType(), F->getLinkage());
   NF->takeName(F);
   NF->copyAttributesFrom(F);
+  removeSanitizerAttributes(NF);
   NF->addFnAttr("cf-trampoline");
 
   // Collect arguments (no var args)
@@ -343,6 +345,13 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   I.Variants.push_back(NF);
 }
 
+void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
+  F->removeFnAttr(Attribute::SanitizeAddress);
+  F->removeFnAttr(Attribute::SanitizeHWAddress);
+  F->removeFnAttr(Attribute::SanitizeMemory);
+  F->removeFnAttr(Attribute::SanitizeThread);
+}
+
 static bool isNoSanitize(const Instruction* I) {
   return I->getMetadata("nosanitize") != nullptr;
 }
@@ -427,11 +436,8 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
 }
 
 void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
-  F->removeFnAttr(Attribute::SanitizeAddress);
-  F->removeFnAttr(Attribute::SanitizeMemory);
-  F->removeFnAttr(Attribute::SanitizeThread);
-
   auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
+  removeSanitizerAttributes(F);
   removeSanitizerInstructions(F, TTI);
 }
 
