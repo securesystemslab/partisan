@@ -64,6 +64,7 @@ struct FInfo {
   std::string name;
   unsigned funcIdx;
 
+  Function* Trampoline;
   std::vector<Function*> variants;
   GlobalVariable* fnPtrArray;
 };
@@ -86,6 +87,11 @@ public:
 
 private:
   MInfo analyzeModule(Module& M);
+
+  void createTrampoline(FInfo &I, GlobalVariable *RandPtrArray);
+  void randomizeCallSites(const FInfo &I, GlobalVariable *RandPtrArray);
+  void convertOriginalToVariant(FInfo &I);
+  void createVariant(FInfo& I);
 
   Function* emitVariant(Function* F, StringRef origName, unsigned variantIdx);
   void convertToTrampoline(Function* F);
@@ -142,24 +148,29 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   // Create randomized ptr array
   mi.randFnPtrArr = emitPtrArray(M, "rand_ptrs", mi.funcs.size());
 
-  // Create first variant
+  // Create trampoline, first variant, and randomize call sites
   for (FInfo& i : mi.funcs) {
-    Function* F = i.original;
+    createTrampoline(i, mi.randFnPtrArr);
+    randomizeCallSites(i, mi.randFnPtrArr);
+    convertOriginalToVariant(i);
 
-    // 1) Create variant prototype by cloning original function
-    // 2) Turn original function into trampoline
-    // 3) Randomize call sites
-    Function* V = emitVariant(F, i.name, 0);
-    convertToTrampoline(F);
-    randomizeCallSites(F, mi.randFnPtrArr, i.funcIdx);
 
-    i.variants.push_back(V);
+//    Function* F = i.original;
+//    // 1) Create variant prototype by cloning original function
+//    // 2) Turn original function into trampoline
+//    // 3) Randomize call sites
+//    Function* V = emitVariant(F, i.name, 0);
+//    convertToTrampoline(F);
+//    randomizeCallSites(F, mi.randFnPtrArr, i.funcIdx);
+//
+//    i.variants.push_back(V);
   }
 
   // Make more variants
   for (FInfo& i : mi.funcs) {
-    Function* V = emitVariant(i.variants[0], i.name, 1);
-    i.variants.push_back(V);
+    createVariant(i);
+//    Function* V = emitVariant(i.variants[0], i.name, 1);
+//    i.variants.push_back(V);
   }
 
   // Do not sanitize variant 0 (bookkeeping-only variant)
@@ -233,6 +244,135 @@ MInfo ControlFlowDiversity::analyzeModule(Module& M) {
   return mi;
 }
 
+static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IRBuilder<> &B) {
+  auto* F = I.original;
+
+  // Get constant pointer to right function in randomized array
+  auto* Int32Ty = Type::getInt32Ty(F->getContext());
+  ArrayRef<Constant*> Indices = {
+      ConstantInt::get(Int32Ty, 0),   // global value is ptr
+      ConstantInt::get(Int32Ty, I.funcIdx)
+  };
+  auto* Ptr = ConstantExpr::getGetElementPtr(nullptr, RandPtrArray, Indices);
+
+  // Cast to appropriate function pointer
+  auto* FuncPtrPtrTy = F->getFunctionType()->getPointerTo()->getPointerTo();
+  auto* FuncPtrPtr = ConstantExpr::getBitCast(Ptr, FuncPtrPtrTy);
+
+  return B.CreateLoad(FuncPtrPtr, I.name +"_ptr");
+
+// TODO(yln): should it be volatile, atomic, etc..?
+// TODO(yln): Hints for the optimizer -- possible optimizations?
+// Is this even useful considering we fix up trampolines at MachineInstr level?
+// http://llvm.org/docs/LangRef.html#id188
+// The optional !nonnull metadata must reference a single metadata name <index> corresponding to a metadata node with no entries. The existence of the !nonnull metadata on the instruction tells the optimizer that the value loaded is known to never be null. This is analogous to the nonnull attribute on parameters and return values. This metadata can only be applied to loads of a pointer type.
+// The optional !dereferenceable metadata must reference a single metadata name <deref_bytes_node> corresponding to a metadata node with one i64 entry. The existence of the !dereferenceable metadata on the instruction tells the optimizer that the value loaded is known to be dereferenceable. The number of bytes known to be dereferenceable is specified by the integer value in the metadata node. This is analogous to the ‘’dereferenceable’’ attribute on parameters and return values. This metadata can only be applied to loads of a pointer type.
+}
+
+void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArray) {
+  auto* F = I.original;
+
+  auto* NF = Function::Create(F->getFunctionType(), F->getLinkage());
+  NF->takeName(F);
+  NF->copyAttributesFrom(F);
+  NF->addFnAttr("cf-trampoline");
+
+  // Collect arguments (no var args)
+  std::vector<Value*> Args;
+  for (auto& A : NF->args()) {
+    A.setName((F->arg_begin() + A.getArgNo())->getName());
+    Args.push_back(&A);
+  }
+
+  auto* BB = BasicBlock::Create(F->getContext(), "", NF);
+  IRBuilder<> B(BB);
+
+  auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
+  auto* Call = B.CreateCall(VarPtr, Args);
+  Call->setAttributes(F->getAttributes()); // TODO(yln): really need this?
+  Call->setCallingConv(F->getCallingConv());
+  Call->setTailCallKind(CallInst::TCK_MustTail);
+
+  auto* RetVal = F->getReturnType()->isVoidTy() ? nullptr : Call;
+  B.CreateRet(RetVal);
+
+  F->getParent()->getFunctionList().insert(F->getIterator(), NF);
+  I.Trampoline = NF;
+}
+
+static void replaceCallSite(CallSite CS, Value* Callee) {
+  std::vector<Value*> Args(CS.arg_begin(), CS.arg_end());
+  Instruction* Old = CS.getInstruction();
+  Instruction* New;
+
+  if (CS.isCall()) {
+    New = CallInst::Create(Callee, Args);
+    cast<CallInst>(New)->setTailCallKind(cast<CallInst>(Old)->getTailCallKind());
+  } else {
+    auto* II = cast<InvokeInst>(Old);
+    New = InvokeInst::Create(Callee, II->getNormalDest(), II->getUnwindDest(), Args);
+  }
+
+  CallSite NewCS(New);
+  NewCS.setCallingConv(CS.getCallingConv());
+  NewCS.setAttributes(CS.getAttributes());
+
+  ReplaceInstWithInst(CS.getInstruction(), New);
+}
+
+void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray) {
+  auto* F = I.original;
+
+  std::vector<CallSite> CallSites;
+  for (auto* U : F->users()) {
+    if (auto CS = CallSite(U))
+      CallSites.push_back(CS);
+  }
+
+  for (auto CS : CallSites) {
+    assert(CS.getCalledFunction() == F);
+    IRBuilder<> B(CS.getInstruction());
+    auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
+    replaceCallSite(CS, VarPtr);
+  }
+}
+
+static void setVariantName(Function *F, StringRef Name, unsigned VariantIndex) {
+  auto Index = std::to_string(VariantIndex);
+  F->setName(Name +"_"+ Index);
+  F->addFnAttr("cf-variant", Index);
+}
+
+void ControlFlowDiversity::convertOriginalToVariant(FInfo &I) {
+  auto* F = I.original;
+
+  setVariantName(F, I.name, 0);
+  F->setLinkage(GlobalValue::PrivateLinkage);
+
+  // Replace remaining usages
+  //F->removeDeadConstantUsers(); // TODO(yln): needed?
+  F->replaceUsesExceptBlockAddr(I.Trampoline);
+
+  // First variant
+  I.variants.push_back(F);
+}
+
+void ControlFlowDiversity::createVariant(FInfo& I) {
+  auto Index = I.variants.size();
+  auto* F = I.variants[Index - 1];
+
+  // Clone function
+  ValueToValueMapTy VMap;
+  auto* NF = CloneFunction(I.original, VMap);
+  setVariantName(NF, I.name, Index);
+
+  // Place just after the cloned function
+  NF->removeFromParent(); // Need to do this, otherwise next line fails.
+  F->getParent()->getFunctionList().insertAfter(F->getIterator(), NF);
+
+  I.variants.push_back(NF);
+}
+
 Function* ControlFlowDiversity::emitVariant(Function* F, StringRef origName, unsigned variantIdx) {
   // Clone function
   ValueToValueMapTy VMap;
@@ -288,6 +428,7 @@ void ControlFlowDiversity::convertToTrampoline(Function* F) {
   ReturnInst::Create(C, retVal, bb);
 }
 
+// TODO(yln): replaceCallSite
 static void CallThroughPointer(CallSite cs, Value* callee) {
   assert(cs.isCall() || cs.isInvoke());
 
@@ -333,10 +474,11 @@ void ControlFlowDiversity::randomizeCallSites(Function* F, GlobalVariable* fnPtr
     if (!isa<CallInst>(U) && !isa<InvokeInst>(U))
       continue;
 
+    //TODO(yln): ImmutableCallSite
     CallSite cs(U);
 
     // Load randomized function pointer
-    LoadInst* funcPtr = new LoadInst(funcPtrPtr, F->getName() +"_ptr", cs.getInstruction()); // TODO(yln): should it be volatile, atomic, etc..?
+    LoadInst* funcPtr = new LoadInst(funcPtrPtr, F->getName() +"_ptr", cs.getInstruction());
 
 // TODO(yln): Hints for the optimizer -- possible optimizations?
 // Is this even useful considering we fix up trampolines at MachineInstr level?
@@ -448,15 +590,17 @@ void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
 
 static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, size_t size, Constant* init) {
   ArrayType* arrayType = ArrayType::get(elementType, size);
-  bool constant = init != nullptr;
+  bool constant = true;
   if (init == nullptr) {
     init = ConstantAggregateZero::get(arrayType);
+    constant = false;
   }
   auto GV = new GlobalVariable(M, arrayType, constant, GlobalValue::PrivateLinkage, init, "__cf_gen_"+ name);
   GV->setExternallyInitialized(!constant);
   return GV;
 }
 
+// TODO(yln): different array functions don't do much anymore. Inline!
 static GlobalVariable* emitProbArray(Module& M, const FInfo& func) {
   IntegerType* type = Type::getInt32Ty(M.getContext());
   return emitArray(M, func.name +"_prob", type, func.variants.size(), /*init=*/ nullptr);
@@ -514,8 +658,7 @@ Constant* ControlFlowDiversity::createFnDescInit(Module& M, StructType* structTy
 }
 
 GlobalVariable* ControlFlowDiversity::emitDescArray(Module& M, StructType* structTy, size_t count, Constant* init) {
-  ArrayType* Ty = ArrayType::get(structTy, count);
-  return new GlobalVariable(M, Ty, /*isConstant*/true, GlobalValue::PrivateLinkage, init, "__cf_gen_descs");
+  return emitArray(M, "descs", structTy, count, init);
 }
 
 static void CallRuntimeHook(Module& M, BasicBlock* bb, Constant* hook, GlobalVariable* descArr, GlobalVariable* randPtrArr, size_t size) {
