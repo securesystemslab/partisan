@@ -75,7 +75,6 @@ struct MInfo {
   std::vector<Function*> ignored;
 
   GlobalVariable* randFnPtrArr;
-  GlobalVariable* fnDescArr;
 };
 
 class ControlFlowDiversity : public ModulePass {
@@ -97,11 +96,8 @@ private:
 
   GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
   Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
-  
-  StructType* emitDescTy(Module& M);
-  Constant* createFnDescInit(Module& M, StructType* structTy, ArrayRef<FInfo> infos);
-  GlobalVariable* emitDescArray(Module& M, StructType* structTy, size_t count, Constant* init);
-  void emitRuntimeInit(Module& M, StructType* structTy, MInfo& mi);
+
+  void emitRuntimeMetadata(Module& M, MInfo& I);
   void addTraceStatements(Function* F);
 };
 } // namespace
@@ -161,11 +157,8 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     i.fnPtrArray = emitPtrArray(M, i.name, i.variants.size(), createFnPtrInit(M, i.variants));
   }
 
-  // Emit "metadata" for runtime randomization.
-  StructType* descTy = emitDescTy(M);
-  mi.fnDescArr = emitDescArray(M, descTy, mi.funcs.size(), createFnDescInit(M, descTy, mi.funcs));
-
-  emitRuntimeInit(M, descTy, mi);
+  // Emit metadata for runtime randomization
+  emitRuntimeMetadata(M, mi);
 
   // Emit trace output.
   if (AddTracingOutput) {
@@ -227,7 +220,7 @@ static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IR
 
   // Get constant pointer to right function in randomized array
   auto* Int32Ty = Type::getInt32Ty(F->getContext());
-  ArrayRef<Constant*> Indices = {
+  Constant* Indices[] = {
       ConstantInt::get(Int32Ty, 0),   // global value is ptr
       ConstantInt::get(Int32Ty, I.funcIdx)
   };
@@ -475,80 +468,78 @@ Constant* ControlFlowDiversity::createFnPtrInit(Module& M, ArrayRef<Function*> v
   return ConstantArray::get(type, elems);
 }
 
-StructType* ControlFlowDiversity::emitDescTy(Module& M) {
-  LLVMContext& C = M.getContext();
-  std::vector<Type*> fields {
-    Type::getInt64PtrTy(C),  // Variant pointers
-    Type::getInt32PtrTy(C),  // Variant probabilities
-    Type::getInt64Ty(C),     // Function entry count (profiling information)
-    Type::getInt32Ty(C)      // Number of variants
+static StructType* createDescTy(Module &M) {
+  auto& C = M.getContext();
+  std::vector<Type*> Fields {
+    Type::getInt64PtrTy(C), // Variant pointers
+    Type::getInt32PtrTy(C), // Variant probabilities
+    Type::getInt64Ty(C),    // Function entry count (profiling information)
+    Type::getInt32Ty(C)     // Number of variants
   };
-  return StructType::create(C, fields, "struct.cf_variant_desc");
+  return StructType::create(C, Fields, "struct.cf_desc");
 }
 
-Constant* ControlFlowDiversity::createFnDescInit(Module& M, StructType* structTy, ArrayRef<FInfo> infos) {
-  LLVMContext& C = M.getContext();
+static Constant* createDescInit(Module& M, StructType* DescTy, ArrayRef<FInfo> Funcs) {
+  auto& C = M.getContext();
+  auto* Zero = ConstantInt::get(Type::getInt32Ty(C), 0);
+  Constant* Indices[]{Zero, Zero};
 
-  ConstantInt* zero = ConstantInt::get(Type::getInt32Ty(C), 0);
-  Constant* indices[] = {zero, zero};
+  std::vector<Constant*> Elems(Funcs.size());
+  for (const FInfo& I : Funcs) {
+    auto* VariantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, I.fnPtrArray, Indices);
+    auto* ProbArrayPtr = ConstantExpr::getGetElementPtr(nullptr, emitProbArray(M, I), Indices);
+    auto* entryCount = ConstantInt::get(Type::getInt64Ty(C), 0 /* no profile data */);
+    auto* VariantCount = ConstantInt::get(Type::getInt32Ty(C), I.variants.size());
 
-  std::vector<Constant*> elems(infos.size());
-  for (const FInfo& i : infos) {
-    Constant* variantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, i.fnPtrArray, indices);
-    Constant* probArrayPtr = ConstantExpr::getGetElementPtr(nullptr, emitProbArray(M, i), indices);
-    ConstantInt* entryCount = ConstantInt::get(Type::getInt64Ty(C), 0 /* no profile data */);
-    ConstantInt* variantCount = ConstantInt::get(Type::getInt32Ty(C), i.variants.size());
-
-    std::vector<Constant*> fields {
-      variantArrayPtr,  // Variant pointers
-      probArrayPtr,     // Variant probabilities
-      entryCount,       // Function entry count (profiling information)
-      variantCount      // num_choices
-    };
-    elems[i.funcIdx] = ConstantStruct::get(structTy, fields);
+    Constant* Fields[]{VariantArrayPtr, ProbArrayPtr, entryCount, VariantCount};
+    auto* Elem = ConstantStruct::get(DescTy, Fields);
+    Elems[I.funcIdx] = Elem;
   }
-  ArrayType* type = ArrayType::get(structTy, infos.size());
-  return ConstantArray::get(type, elems);
+  auto* Ty = ArrayType::get(DescTy, Funcs.size());
+  return ConstantArray::get(Ty, Elems);
 }
 
-GlobalVariable* ControlFlowDiversity::emitDescArray(Module& M, StructType* structTy, size_t count, Constant* init) {
-  return emitArray(M, "descs", structTy, count, init);
-}
-
-static void CallRuntimeHook(Module& M, BasicBlock* bb, Constant* hook, GlobalVariable* descArr, GlobalVariable* randPtrArr, size_t size) {
-  ConstantInt* const_0 = ConstantInt::get(M.getContext(), APInt(32, 0));
-  Constant* indices[] = {const_0, const_0};
-  Value* args[] = {
-    ConstantExpr::getGetElementPtr(nullptr, descArr, indices),
-    ConstantExpr::getGetElementPtr(nullptr, randPtrArr, indices),
-    ConstantInt::get(Type::getInt32Ty(M.getContext()), size)
-  };
-  CallInst::Create(hook, args, "", bb);
-}
-
-void ControlFlowDiversity::emitRuntimeInit(Module& M, StructType* structTy, MInfo& mi) {
-  LLVMContext& C = M.getContext();
+static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* DescArray, MInfo& I) {
+  auto& C = M.getContext();
+  auto* Int32Ty = Type::getInt32Ty(C);
+  auto* Int64Ty = Type::getInt64Ty(C);
+  auto* VoidTy = Type::getVoidTy(C);
 
   // This function is provided by the [ControlFlowRuntime.c]
   // void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count)
-  Constant* moduleCtor = M.getOrInsertFunction(
+  auto* Hook = M.getOrInsertFunction(
       "__cf_register",
-      Type::getVoidTy(C),             // return type
-      PointerType::get(structTy, 0),  // ptr to desc array
-      PointerType::get(Type::getInt64Ty(C), 0), // ptr to randomized ptr array
-      Type::getInt32Ty(C));           // function count
+      VoidTy, // Return type
+      DescTy->getPointerTo(), Int64Ty->getPointerTo(), Int32Ty); // Arg types
 
-  // Init function
-  FunctionType* initFnTy = FunctionType::get(Type::getVoidTy(C), /* isVarArg */ false);
-  Function* initFn = Function::Create(initFnTy, Function::PrivateLinkage, "cf.module_ctor", &M);
+  // Module ctor
+  auto* CtorTy = FunctionType::get(VoidTy, /* isVarArg */ false);
+  auto* Ctor = Function::Create(CtorTy, GlobalValue::PrivateLinkage, "cf.module_ctor", &M);
+  auto* BB = BasicBlock::Create(C, "", Ctor);
+
+  // Arguments
+  auto* Zero = ConstantInt::get(Int32Ty, 0);
+  Constant* Indices[]{Zero, Zero};
+  Value* Args[] {
+      ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices),
+      ConstantExpr::getGetElementPtr(nullptr, I.randFnPtrArr, Indices),
+      ConstantInt::get(Int32Ty, I.funcs.size())
+  };
 
   // Body
-  BasicBlock* bb = BasicBlock::Create(C, "", initFn);
-  CallRuntimeHook(M, bb, moduleCtor, mi.fnDescArr, mi.randFnPtrArr, mi.funcs.size());
-  ReturnInst::Create(C, bb);
+  IRBuilder<> B(BB);
+  B.CreateCall(Hook, Args);
+  B.CreateRetVoid();
 
-  // Add to global ctors
-  appendToGlobalCtors(M, initFn, /* Priority */ 0);
+  // Add to list of ctors
+  appendToGlobalCtors(M, Ctor, /* Priority */ 0);
+}
+
+void ControlFlowDiversity::emitRuntimeMetadata(Module& M, MInfo& I) {
+  auto* Ty = createDescTy(M);
+  auto* Init = createDescInit(M, Ty, I.funcs);
+  auto* Array = emitArray(M, "descs", Ty, I.funcs.size(), Init);
+  createModuleCtor(M, Ty, Array, I);
 }
 
 static void insertTraceFPrintf(Module& M, StringRef output, StringRef fieldName, Instruction* before) {
