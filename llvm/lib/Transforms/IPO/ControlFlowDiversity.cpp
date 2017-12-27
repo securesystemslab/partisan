@@ -93,10 +93,6 @@ private:
   void convertOriginalToVariant(FInfo &I);
   void createVariant(FInfo& I);
 
-  Function* emitVariant(Function* F, StringRef origName, unsigned variantIdx);
-  void convertToTrampoline(Function* F);
-  void randomizeCallSites(Function* F, GlobalVariable* fnPtrArray, unsigned funcIdx);
-
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerInstructions(Function* F);
   void removeSanitizerChecks(Function* F) {
@@ -148,29 +144,16 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   // Create randomized ptr array
   mi.randFnPtrArr = emitPtrArray(M, "rand_ptrs", mi.funcs.size());
 
-  // Create trampoline, first variant, and randomize call sites
+  // Create trampoline, randomize call sites, make first variant
   for (FInfo& i : mi.funcs) {
     createTrampoline(i, mi.randFnPtrArr);
     randomizeCallSites(i, mi.randFnPtrArr);
     convertOriginalToVariant(i);
-
-
-//    Function* F = i.original;
-//    // 1) Create variant prototype by cloning original function
-//    // 2) Turn original function into trampoline
-//    // 3) Randomize call sites
-//    Function* V = emitVariant(F, i.name, 0);
-//    convertToTrampoline(F);
-//    randomizeCallSites(F, mi.randFnPtrArr, i.funcIdx);
-//
-//    i.variants.push_back(V);
   }
 
   // Make more variants
   for (FInfo& i : mi.funcs) {
     createVariant(i);
-//    Function* V = emitVariant(i.variants[0], i.name, 1);
-//    i.variants.push_back(V);
   }
 
   // Do not sanitize variant 0 (bookkeeping-only variant)
@@ -367,135 +350,10 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   setVariantName(NF, I.name, Index);
 
   // Place just after the cloned function
-  NF->removeFromParent(); // Need to do this, otherwise next line fails.
+  NF->removeFromParent(); // Need to do this, otherwise next line fails
   F->getParent()->getFunctionList().insertAfter(F->getIterator(), NF);
 
   I.variants.push_back(NF);
-}
-
-Function* ControlFlowDiversity::emitVariant(Function* F, StringRef origName, unsigned variantIdx) {
-  // Clone function
-  ValueToValueMapTy VMap;
-  Function* NF = CloneFunction(F, VMap);
-
-  // Set name and attributes
-  auto idxStr = std::to_string(variantIdx);
-  NF->setName(origName +"_"+ idxStr);
-  NF->copyAttributesFrom(F);
-  NF->setLinkage(GlobalValue::PrivateLinkage); // must be after "copyAttributesFrom" (might change visibility)
-  NF->addFnAttr("cf-variant", idxStr);
-
-  // TODO(yln): Should we remove profiling metadata from variants?
-//  NF->eraseMetadata(LLVMContext::MD_prof);
-
-  // Place just after original function
-  NF->removeFromParent(); // Need to do this, otherwise next line fails.
-  F->getParent()->getFunctionList().insertAfter(F->getIterator(), NF);
-
-  return NF;
-}
-
-// deleteBody and dropAllReferences don't do the trick (they also remove function metadata)
-static void dropBody(Function& F) {
-  for (auto& BB : F) BB.dropAllReferences();
-  while (!F.empty()) F.begin()->eraseFromParent();
-}
-
-void ControlFlowDiversity::convertToTrampoline(Function* F) {
-  dropBody(*F);
-
-  // Mark trampoline and don't sanitize
-  removeSanitizerAttributes(F);
-  F->addFnAttr("cf-trampoline");
-
-  // Copy regular arguments (no var args)
-  std::vector<Value*> args;
-  for (auto& A : F->args()) {
-    args.push_back(&A);
-  }
-
-  LLVMContext& C = F->getContext();
-  BasicBlock* bb = BasicBlock::Create(C, "", F);
-
-  // Create call to self (add artificial use); later this is replaced by randomizeCallSites
-  CallInst* call = CallInst::Create(F, args, "", bb);
-  call->setCallingConv(F->getCallingConv());
-  call->setAttributes(F->getAttributes()); // TODO(yln): need this?
-  call->setTailCall(true);
-
-  // Return
-  Value* retVal = (F->getReturnType()->isVoidTy()) ? nullptr : call;
-  ReturnInst::Create(C, retVal, bb);
-}
-
-// TODO(yln): replaceCallSite
-static void CallThroughPointer(CallSite cs, Value* callee) {
-  assert(cs.isCall() || cs.isInvoke());
-
-  std::vector<Value*> args(cs.arg_begin(), cs.arg_end());
-  Instruction* newCall;
-
-  if (cs.isCall()) {
-    CallInst* ci = cast<CallInst>(cs.getInstruction());
-    CallInst* newCi = CallInst::Create(callee, args);
-    newCi->setTailCall(ci->isTailCall());
-    newCall = newCi;
-  } else {
-    InvokeInst* ii = cast<InvokeInst>(cs.getInstruction());
-    newCall = InvokeInst::Create(callee, ii->getNormalDest(), ii->getUnwindDest(), args);
-  }
-
-  CallSite newCs(newCall);
-  newCs.setCallingConv(cs.getCallingConv());
-  newCs.setAttributes(cs.getAttributes());
-
-  ReplaceInstWithInst(cs.getInstruction(), newCall);
-}
-
-void ControlFlowDiversity::randomizeCallSites(Function* F, GlobalVariable* fnPtrArray, unsigned funcIdx) {
-  LLVMContext& C = F->getContext();
-
-  // Get constant pointer to right function in randomized array
-  Value* indices[] = {
-    ConstantInt::get(C, APInt(32, 0)), // global value is ptr
-    ConstantInt::get(C, APInt(32, funcIdx))
-  };
-  Constant* intPtr = ConstantExpr::getGetElementPtr(nullptr, fnPtrArray, indices);
-
-  // Cast pointee from int to appropriate function pointer
-  PointerType* funcPtrPtrTy = F->getFunctionType()->getPointerTo()->getPointerTo();
-  Constant* funcPtrPtr = ConstantExpr::getBitCast(intPtr, funcPtrPtrTy);
-
-  // Replace usages
-  F->removeDeadConstantUsers();
-  std::vector<User*> worklist(F->user_begin(), F->user_end());
-
-  for (auto U : worklist) {
-    if (!isa<CallInst>(U) && !isa<InvokeInst>(U))
-      continue;
-
-    //TODO(yln): ImmutableCallSite
-    CallSite cs(U);
-
-    // Load randomized function pointer
-    LoadInst* funcPtr = new LoadInst(funcPtrPtr, F->getName() +"_ptr", cs.getInstruction());
-
-// TODO(yln): Hints for the optimizer -- possible optimizations?
-// Is this even useful considering we fix up trampolines at MachineInstr level?
-// http://llvm.org/docs/LangRef.html#id188
-// The optional !nonnull metadata must reference a single metadata name <index> corresponding to a metadata node with no entries. The existence of the !nonnull metadata on the instruction tells the optimizer that the value loaded is known to never be null. This is analogous to the nonnull attribute on parameters and return values. This metadata can only be applied to loads of a pointer type.
-// The optional !dereferenceable metadata must reference a single metadata name <deref_bytes_node> corresponding to a metadata node with one i64 entry. The existence of the !dereferenceable metadata on the instruction tells the optimizer that the value loaded is known to be dereferenceable. The number of bytes known to be dereferenceable is specified by the integer value in the metadata node. This is analogous to the ‘’dereferenceable’’ attribute on parameters and return values. This metadata can only be applied to loads of a pointer type.
-
-    if (cs.getCalledFunction() == F) {  // Used as callee (direct call)
-      CallThroughPointer(cs, funcPtr);
-    } else {                            // Used as argument
-      // TODO(yln): Think about if we want to try opitmize, i.e., not go through the trampoline if we pass the address
-      // of the original function around as a pointer value. The problem with short-circuiting the trampoline is that
-      // the function could store the passed function pointer or use it multiple times (reducing randomization).
-      for (Value* A : cs.args()) if (A == F) return;
-      llvm_unreachable("F is not used as the callee and not as an argument");
-    }
-  }
 }
 
 void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
