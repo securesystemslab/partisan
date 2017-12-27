@@ -61,20 +61,20 @@ static cl::opt<bool> AddTracingOutput(
 namespace {
 
 struct FInfo {
-  Function* original;
-  std::string name;
-  unsigned funcIdx;
+  Function* const Original;
+  const std::string Name;
+  const unsigned Index;
 
   Function* Trampoline;
-  std::vector<Function*> variants;
-  GlobalVariable* fnPtrArray;
+  std::vector<Function*> Variants;
+  GlobalVariable* VariantArray;
 };
 
 struct MInfo {
-  std::vector<FInfo> funcs;
-  std::vector<Function*> ignored;
+  std::vector<FInfo> Fns;
+  std::vector<Function*> IgnoredFns;
 
-  GlobalVariable* randFnPtrArr;
+  GlobalVariable* RandPtrArray;
 };
 
 class ControlFlowDiversity : public ModulePass {
@@ -120,41 +120,41 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
 
   DEBUG(dbgs()
     << "Adding control flow diversity to module '" << M.getName()
-    << "', instrumented/total # of functions: " << mi.funcs.size() << "/" << (mi.funcs.size() + mi.ignored.size()) << "\n"
+    << "', instrumented/total # of functions: " << mi.Fns.size() << "/" << (mi.Fns.size() + mi.IgnoredFns.size()) << "\n"
 //    << "  " << MinimumEntryCount.ArgStr << "=" << MinimumEntryCount << "\n"
     << "  " << DiversifyByMemoryAccess.ArgStr << "=" << int(DiversifyByMemoryAccess.getValue()) << "\n"
     << "  " << DiversifyByHotness.ArgStr << "=" << int(DiversifyByHotness.getValue()) << "\n"
-    << "Instrumented functions:"; for (auto i : mi.funcs) dbgs() << "\n  " << i.name;
-    dbgs() << "\nIgnored functions:"; for (auto F : mi.ignored) dbgs() << "\n  " << F->getName();
+    << "Instrumented functions:"; for (auto i : mi.Fns) dbgs() << "\n  " << i.Name;
+    dbgs() << "\nIgnored functions:"; for (auto F : mi.IgnoredFns) dbgs() << "\n  " << F->getName();
     dbgs() << "\n");
 
-  if (mi.funcs.empty()) {
+  if (mi.Fns.empty()) {
     return false;
   }
 
   // Create randomized ptr array
-  mi.randFnPtrArr = emitPtrArray(M, "rand_ptrs", mi.funcs.size());
+  mi.RandPtrArray = emitPtrArray(M, "rand_ptrs", mi.Fns.size());
 
   // Create trampoline, randomize call sites, make first variant
-  for (FInfo& i : mi.funcs) {
-    createTrampoline(i, mi.randFnPtrArr);
-    randomizeCallSites(i, mi.randFnPtrArr);
+  for (FInfo& i : mi.Fns) {
+    createTrampoline(i, mi.RandPtrArray);
+    randomizeCallSites(i, mi.RandPtrArray);
     convertOriginalToVariant(i);
   }
 
   // Make more variants
-  for (FInfo& i : mi.funcs) {
+  for (FInfo& i : mi.Fns) {
     createVariant(i);
   }
 
   // Do not sanitize variant 0 (bookkeeping-only variant)
-  for (FInfo& i : mi.funcs) {
-    removeSanitizerChecks(i.variants[0]);
+  for (FInfo& i : mi.Fns) {
+    removeSanitizerChecks(i.Variants[0]);
   }
 
   // Create ptr arrays.
-  for (FInfo& i : mi.funcs) {
-    i.fnPtrArray = emitPtrArray(M, i.name, i.variants.size(), createFnPtrInit(M, i.variants));
+  for (FInfo& i : mi.Fns) {
+    i.VariantArray = emitPtrArray(M, i.Name, i.Variants.size(), createFnPtrInit(M, i.Variants));
   }
 
   // Emit metadata for runtime randomization
@@ -162,8 +162,8 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
 
   // Emit trace output.
   if (AddTracingOutput) {
-    for (FInfo& i : mi.funcs) {
-      for (Function* f : i.variants) {
+    for (FInfo& i : mi.Fns) {
+      for (Function* f : i.Variants) {
         addTraceStatements(f);
       }
     }
@@ -204,25 +204,25 @@ MInfo ControlFlowDiversity::analyzeModule(Module& M) {
     if (F.isDeclaration()) continue;
     if (shouldRandomize(F)) {
       FInfo fi { &F, F.getName(), idx++ };
-      mi.funcs.push_back(fi);
+      mi.Fns.push_back(fi);
     } else {
-      mi.ignored.push_back(&F);
+      mi.IgnoredFns.push_back(&F);
     }
   }
   auto decls = std::count_if(M.begin(), M.end(), [](Function& F) { return F.isDeclaration(); });
-  assert(M.size() == decls + mi.funcs.size() + mi.ignored.size());
+  assert(M.size() == decls + mi.Fns.size() + mi.IgnoredFns.size());
 
   return mi;
 }
 
 static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IRBuilder<> &B) {
-  auto* F = I.original;
+  auto* F = I.Original;
 
   // Get constant pointer to right function in randomized array
   auto* Int32Ty = Type::getInt32Ty(F->getContext());
   Constant* Indices[] = {
       ConstantInt::get(Int32Ty, 0),   // global value is ptr
-      ConstantInt::get(Int32Ty, I.funcIdx)
+      ConstantInt::get(Int32Ty, I.Index)
   };
   auto* Ptr = ConstantExpr::getGetElementPtr(nullptr, RandPtrArray, Indices);
 
@@ -230,7 +230,7 @@ static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IR
   auto* FuncPtrPtrTy = F->getFunctionType()->getPointerTo()->getPointerTo();
   auto* FuncPtrPtr = ConstantExpr::getBitCast(Ptr, FuncPtrPtrTy);
 
-  return B.CreateLoad(FuncPtrPtr, I.name +"_ptr");
+  return B.CreateLoad(FuncPtrPtr, I.Name +"_ptr");
 
 // TODO(yln): should it be volatile, atomic, etc..?
 // TODO(yln): Hints for the optimizer -- possible optimizations?
@@ -241,7 +241,7 @@ static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IR
 }
 
 void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArray) {
-  auto* F = I.original;
+  auto* F = I.Original;
 
   auto* NF = Function::Create(F->getFunctionType(), F->getLinkage());
   NF->takeName(F);
@@ -291,7 +291,7 @@ static void replaceCallSite(CallSite CS, Value* Callee) {
 }
 
 void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray) {
-  auto* F = I.original;
+  auto* F = I.Original;
 
   std::vector<CallSite> CallSites;
   for (auto* U : F->users()) {
@@ -314,9 +314,9 @@ static void setVariantName(Function *F, StringRef Name, unsigned VariantIndex) {
 }
 
 void ControlFlowDiversity::convertOriginalToVariant(FInfo &I) {
-  auto* F = I.original;
+  auto* F = I.Original;
 
-  setVariantName(F, I.name, 0);
+  setVariantName(F, I.Name, 0);
   F->setLinkage(GlobalValue::PrivateLinkage);
 
   // Replace remaining usages
@@ -324,23 +324,23 @@ void ControlFlowDiversity::convertOriginalToVariant(FInfo &I) {
   F->replaceUsesExceptBlockAddr(I.Trampoline);
 
   // First variant
-  I.variants.push_back(F);
+  I.Variants.push_back(F);
 }
 
 void ControlFlowDiversity::createVariant(FInfo& I) {
-  auto Index = I.variants.size();
-  auto* F = I.variants[Index - 1];
+  auto VariantNo = I.Variants.size();
 
   // Clone function
   ValueToValueMapTy VMap;
-  auto* NF = CloneFunction(I.original, VMap);
-  setVariantName(NF, I.name, Index);
+  auto* NF = CloneFunction(I.Original, VMap);
+  setVariantName(NF, I.Name, VariantNo);
 
-  // Place just after the cloned function
+  // Place after previous variant
+  auto* F = I.Variants[VariantNo - 1];
   NF->removeFromParent(); // Need to do this, otherwise next line fails
   F->getParent()->getFunctionList().insertAfter(F->getIterator(), NF);
 
-  I.variants.push_back(NF);
+  I.Variants.push_back(NF);
 }
 
 static bool isNoSanitize(const Instruction* I) {
@@ -450,7 +450,7 @@ static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, s
 // TODO(yln): different array functions don't do much anymore. Inline!
 static GlobalVariable* emitProbArray(Module& M, const FInfo& func) {
   IntegerType* type = Type::getInt32Ty(M.getContext());
-  return emitArray(M, func.name +"_prob", type, func.variants.size(), /*init=*/ nullptr);
+  return emitArray(M, func.Name +"_prob", type, func.Variants.size(), /*init=*/ nullptr);
 }
 
 GlobalVariable* ControlFlowDiversity::emitPtrArray(Module& M, StringRef name, size_t size, Constant* init) {
@@ -486,14 +486,14 @@ static Constant* createDescInit(Module& M, StructType* DescTy, ArrayRef<FInfo> F
 
   std::vector<Constant*> Elems(Funcs.size());
   for (const FInfo& I : Funcs) {
-    auto* VariantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, I.fnPtrArray, Indices);
+    auto* VariantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, I.VariantArray, Indices);
     auto* ProbArrayPtr = ConstantExpr::getGetElementPtr(nullptr, emitProbArray(M, I), Indices);
     auto* entryCount = ConstantInt::get(Type::getInt64Ty(C), 0 /* no profile data */);
-    auto* VariantCount = ConstantInt::get(Type::getInt32Ty(C), I.variants.size());
+    auto* VariantCount = ConstantInt::get(Type::getInt32Ty(C), I.Variants.size());
 
     Constant* Fields[]{VariantArrayPtr, ProbArrayPtr, entryCount, VariantCount};
     auto* Elem = ConstantStruct::get(DescTy, Fields);
-    Elems[I.funcIdx] = Elem;
+    Elems[I.Index] = Elem;
   }
   auto* Ty = ArrayType::get(DescTy, Funcs.size());
   return ConstantArray::get(Ty, Elems);
@@ -522,8 +522,8 @@ static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* Desc
   Constant* Indices[]{Zero, Zero};
   Value* Args[] {
       ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices),
-      ConstantExpr::getGetElementPtr(nullptr, I.randFnPtrArr, Indices),
-      ConstantInt::get(Int32Ty, I.funcs.size())
+      ConstantExpr::getGetElementPtr(nullptr, I.RandPtrArray, Indices),
+      ConstantInt::get(Int32Ty, I.Fns.size())
   };
 
   // Body
@@ -537,8 +537,8 @@ static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* Desc
 
 void ControlFlowDiversity::emitRuntimeMetadata(Module& M, MInfo& I) {
   auto* Ty = createDescTy(M);
-  auto* Init = createDescInit(M, Ty, I.funcs);
-  auto* Array = emitArray(M, "descs", Ty, I.funcs.size(), Init);
+  auto* Init = createDescInit(M, Ty, I.Fns);
+  auto* Array = emitArray(M, "descs", Ty, I.Fns.size(), Init);
   createModuleCtor(M, Ty, Array, I);
 }
 
