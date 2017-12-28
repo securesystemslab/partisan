@@ -144,14 +144,14 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     convertOriginalToVariant(i);
   }
 
-  // Make more variants
+  // Create more variants
+  // 0) Coverage and sanitization (converted from original)
+  // 1) Coverage only
+  // 2) None
   for (FInfo& i : mi.Fns) {
-    createVariant(i);
-  }
-
-  // Do not sanitize variant 0 (bookkeeping-only variant)
-  for (FInfo& i : mi.Fns) {
-    removeSanitizerChecks(i.Variants[0], /* removeSanCov */ false);
+    createVariant(i); createVariant(i);
+    removeSanitizerChecks(i.Variants[1], /* removeSanCov */ false);
+    removeSanitizerChecks(i.Variants[2], /* removeSanCov */ true);
   }
 
   // Create ptr arrays.
