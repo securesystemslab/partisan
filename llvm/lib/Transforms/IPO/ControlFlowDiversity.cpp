@@ -94,7 +94,7 @@ private:
   void convertOriginalToVariant(FInfo &I);
   void createVariant(FInfo& I);
   void removeSanitizerAttributes(Function *F);
-  void removeSanitizerChecks(Function* F);
+  void removeSanitizerChecks(Function* F, bool removeSanCov);
 
   GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
   Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
@@ -151,7 +151,7 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
 
   // Do not sanitize variant 0 (bookkeeping-only variant)
   for (FInfo& i : mi.Fns) {
-    removeSanitizerChecks(i.Variants[0]);
+    removeSanitizerChecks(i.Variants[0], /* removeSanCov */ false);
   }
 
   // Create ptr arrays.
@@ -358,17 +358,19 @@ static bool hasSanCovOp(const Value* V) {
       || (U && std::any_of(U->op_begin(), U->op_end(), hasSanCovOp));
 }
 
-static bool shouldRemove(const Instruction* I) {
-  return I->use_empty() && isNoSanitize(I) && !hasSanCovOp(I);
+static bool shouldRemove(const Instruction* I, bool removeSanCov) {
+  return I->use_empty()
+      && isNoSanitize(I)
+      && (removeSanCov || !hasSanCovOp(I));
 }
 
-static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI) {
+static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI, bool removeSanCov) {
   constexpr unsigned BonusInstThreshold = 1;
 
   // Mark initial set of instructions for removal
   std::vector<Instruction*> removed;
   for (Instruction& I : instructions(*F)) {
-    if (shouldRemove(&I)) {
+    if (shouldRemove(&I, removeSanCov)) {
       removed.push_back(&I);
     }
   }
@@ -419,7 +421,7 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
     // Mark instructions that are no longer used
     for (Value* V : Operands) {
       Instruction* Op = dyn_cast<Instruction>(V);
-      if (Op && shouldRemove(Op) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
+      if (Op && shouldRemove(Op, removeSanCov) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
         removed.push_back(Op);
       }
     }
@@ -431,10 +433,10 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
   }
 }
 
-void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
+void ControlFlowDiversity::removeSanitizerChecks(Function* F, bool removeSanCov) {
   auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
   removeSanitizerAttributes(F);
-  removeSanitizerInstructions(F, TTI);
+  removeSanitizerInstructions(F, TTI, removeSanCov);
 }
 
 static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, size_t size, Constant* init) {
