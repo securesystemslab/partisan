@@ -216,7 +216,7 @@ MInfo ControlFlowDiversity::analyzeModule(Module& M) {
   return mi;
 }
 
-static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IRBuilder<> &B) {
+static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IRBuilder<>& B) {
   auto* F = I.Original;
 
   // Get constant pointer to right function in randomized array
@@ -272,40 +272,15 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArr
   I.Trampoline = NF;
 }
 
-static void replaceCallSite(CallSite CS, Value* Callee) {
-  std::vector<Value*> Args(CS.arg_begin(), CS.arg_end());
-  Instruction* Old = CS.getInstruction();
-  Instruction* New;
-
-  if (CS.isCall()) {
-    New = CallInst::Create(Callee, Args);
-    cast<CallInst>(New)->setTailCallKind(cast<CallInst>(Old)->getTailCallKind());
-  } else {
-    auto* II = cast<InvokeInst>(Old);
-    New = InvokeInst::Create(Callee, II->getNormalDest(), II->getUnwindDest(), Args);
-  }
-
-  CallSite NewCS(New);
-  NewCS.setCallingConv(CS.getCallingConv());
-  NewCS.setAttributes(CS.getAttributes());
-
-  ReplaceInstWithInst(CS.getInstruction(), New);
-}
-
 void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray) {
   auto* F = I.Original;
 
-  std::vector<CallSite> CallSites;
   for (auto* U : F->users()) {
-    if (auto CS = CallSite(U))
-      CallSites.push_back(CS);
-  }
-
-  for (auto CS : CallSites) {
-    assert(CS.getCalledFunction() == F);
-    IRBuilder<> B(CS.getInstruction());
-    auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
-    replaceCallSite(CS, VarPtr);
+    if (auto CS = CallSite(U)) {
+      IRBuilder<> B(CS.getInstruction());
+      auto *VarPtr = loadVariantPtr(I, RandPtrArray, B);
+      CS.setCalledFunction(VarPtr);
+    }
   }
 }
 
