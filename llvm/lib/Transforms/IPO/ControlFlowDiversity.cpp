@@ -361,9 +361,8 @@ static bool hasSanCovOp(const Value* V) {
 }
 
 static bool shouldRemove(const Instruction* I, bool removeSanCov) {
-  return I->use_empty()
-      && isNoSanitize(I)
-      && (removeSanCov || !hasSanCovOp(I));
+  if (!I->use_empty()) return false;
+  return hasSanCovOp(I) ? removeSanCov : isNoSanitize(I);
 }
 
 static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI, bool removeSanCov) {
