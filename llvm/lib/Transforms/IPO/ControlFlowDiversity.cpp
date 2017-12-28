@@ -59,7 +59,7 @@ static cl::opt<bool> AddTracingOutput(
 
 
 namespace {
-constexpr const char* SanCovGenPrefix = "__sancov_gen_";
+constexpr const char* SanCovPrefix = "__sancov_";
 
 struct FInfo {
   Function* const Original;
@@ -274,7 +274,7 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArr
 }
 
 static bool isSanCovUser(const User* U) {
-  return U->getName().startswith(SanCovGenPrefix)
+  return U->getName().startswith(SanCovPrefix)
       || std::any_of(U->user_begin(), U->user_end(), isSanCovUser);
 }
 
@@ -354,7 +354,7 @@ static bool isNoSanitize(const Instruction* I) {
 
 static bool hasSanCovOp(const Value* V) {
   auto* U = dyn_cast<User>(V);
-  return V->getName().startswith(SanCovGenPrefix)
+  return V->getName().startswith(SanCovPrefix)
       || (U && std::any_of(U->op_begin(), U->op_end(), hasSanCovOp));
 }
 
