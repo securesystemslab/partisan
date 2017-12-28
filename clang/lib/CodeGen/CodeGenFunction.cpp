@@ -840,14 +840,14 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
 #undef SANITIZER
   } while (0);
 
+  if (D && D->hasAttr<NoSanitizeAttr>()) {
+    Fn->addFnAttr(llvm::Attribute::NoControlFlowDiversity);
+  }
+
   if (D) {
     // Apply the no_sanitize* attributes to SanOpts.
     for (auto Attr : D->specific_attrs<NoSanitizeAttr>())
       SanOpts.Mask &= ~Attr->getMask();
-  }
-
-  if (D && D->hasAttr<NoSanitizeAttr>()) {
-    Fn->addFnAttr(llvm::Attribute::NoControlFlowDiversity);
   }
 
   // Apply sanitizer attributes to the function.
