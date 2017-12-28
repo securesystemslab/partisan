@@ -59,6 +59,7 @@ static cl::opt<bool> AddTracingOutput(
 
 
 namespace {
+constexpr const char* SanCovGenPrefix = "__sancov_gen_";
 
 struct FInfo {
   Function* const Original;
@@ -272,15 +273,38 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArr
   I.Trampoline = NF;
 }
 
+static bool isSanCovUser(const User* U) {
+  return U->getName().startswith(SanCovGenPrefix)
+      || std::any_of(U->user_begin(), U->user_end(), isSanCovUser);
+}
+
+// See [Value::replaceUsesExceptBlockAddr] for algorithm template
 void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray) {
   auto* F = I.Original;
+//  F->removeDeadConstantUsers(); // TODO(yln): needed?
 
-  for (auto* U : F->users()) {
-    if (auto CS = CallSite(U)) {
+  SmallPtrSet<Constant*, 8> Constants;
+  auto UI = F->use_begin(), E = F->use_end();
+  while (UI != E) {
+    auto& Use = *UI++;
+    auto* User = Use.getUser();
+
+    if (isa<BlockAddress>(User) || isSanCovUser(User))
+      continue;
+
+    if (auto CS = CallSite(User)) {
       IRBuilder<> B(CS.getInstruction());
-      auto *VarPtr = loadVariantPtr(I, RandPtrArray, B);
+      auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
       CS.setCalledFunction(VarPtr);
+    } else if (isa<Constant>(User) && !isa<GlobalValue>(User)) {
+      Constants.insert(cast<Constant>(User));
+    } else {
+      Use.set(I.Trampoline);
     }
+  }
+
+  for (auto* C : Constants) {
+    C->handleOperandChange(F, I.Trampoline);
   }
 }
 
@@ -295,10 +319,6 @@ void ControlFlowDiversity::convertOriginalToVariant(FInfo &I) {
 
   setVariantName(F, I.Name, 0);
   F->setLinkage(GlobalValue::PrivateLinkage);
-
-  // Replace remaining usages
-  //F->removeDeadConstantUsers(); // TODO(yln): needed?
-  F->replaceUsesExceptBlockAddr(I.Trampoline);
 
   // First variant
   I.Variants.push_back(F);
@@ -332,14 +352,14 @@ static bool isNoSanitize(const Instruction* I) {
   return I->getMetadata("nosanitize") != nullptr;
 }
 
-static bool isSanCov(const Value* V) {
+static bool hasSanCovOp(const Value* V) {
   auto* U = dyn_cast<User>(V);
-  return V->getName().startswith("__sancov_gen_")
-      || (U && std::any_of(U->op_begin(), U->op_end(), isSanCov));
+  return V->getName().startswith(SanCovGenPrefix)
+      || (U && std::any_of(U->op_begin(), U->op_end(), hasSanCovOp));
 }
 
 static bool shouldRemove(const Instruction* I) {
-  return I->use_empty() && isNoSanitize(I) && !isSanCov(I);
+  return I->use_empty() && isNoSanitize(I) && !hasSanCovOp(I);
 }
 
 static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI) {
@@ -452,7 +472,7 @@ Constant* ControlFlowDiversity::createFnPtrInit(Module& M, ArrayRef<Function*> v
 
 static StructType* createDescTy(Module &M) {
   auto& C = M.getContext();
-  std::vector<Type*> Fields {
+  Type* Fields[] {
     Type::getInt64PtrTy(C), // Variant pointers
     Type::getInt32PtrTy(C), // Variant probabilities
     Type::getInt64Ty(C),    // Function entry count (profiling information)
