@@ -152,6 +152,8 @@ Fuzzer::Fuzzer(UserCallback CB, InputCorpus &Corpus, MutationDispatcher &MD,
   TPC.SetUseValueProfile(Options.UseValueProfile);
   TPC.SetUseClangCoverage(Options.UseClangCoverage);
 
+  TPC.InitFunctionInfos();
+
   if (Options.Verbosity)
     TPC.PrintModuleInfo();
   if (!Options.OutputCorpus.empty() && Options.ReloadIntervalSec)

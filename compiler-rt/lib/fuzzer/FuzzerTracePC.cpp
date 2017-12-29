@@ -144,11 +144,22 @@ void TracePC::HandleCallerCallee(uintptr_t Caller, uintptr_t Callee) {
   ValueProfileMap.AddValueModPrime(Idx);
 }
 
+void TracePC::InitFunctionInfos() {
+  // TODO(yln)
+}
+
+void TracePC::HandleNewObservedPC(uintptr_t PC) {
+  // TODO(yln)
+}
+
 void TracePC::UpdateObservedPCs() {
   Vector<uintptr_t> CoveredFuncs;
   auto ObservePC = [&](uintptr_t PC) {
-    if (ObservedPCs.insert(PC).second && DoPrintNewPCs)
-      PrintPC("\tNEW_PC: %p %F %L\n", "\tNEW_PC: %p\n", PC + 1);
+    if (ObservedPCs.insert(PC).second) {
+      HandleNewObservedPC(PC);
+      if (DoPrintNewPCs)
+        PrintPC("\tNEW_PC: %p %F %L\n", "\tNEW_PC: %p\n", PC + 1);
+    }
   };
 
   auto Observe = [&](const PCTableEntry &TE) {
