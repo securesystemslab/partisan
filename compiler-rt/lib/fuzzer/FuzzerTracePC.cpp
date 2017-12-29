@@ -148,17 +148,36 @@ void TracePC::InitFunctionInfos() {
   for (size_t i = 0; i < NumPCTables; i++) {
     auto& M = ModulePCTable[i];
     for (auto* E = M.Start; E < M.Stop; E++) {
-      if (E->PCFlags & 1) // PC for function entry block
-        FuncsByAddress.emplace_back(E->PC);
+      if (E->PCFlags & 1) {// PC for function entry block
+        FuncsByPC.emplace_back(FInfo{E->PC, 0});
+        Printf("\nfunction[%p]: ", E->PC);
+      }
 
-      FuncsByAddress.back().UnobservedPCs.insert(E->PC);
+      FuncsByPC.back().NumUnobservedPCs++;
+      Printf(", %p", E->PC);
     }
   }
-  std::sort(FuncsByAddress.begin(), FuncsByAddress.end());
+  Printf("\n\n");
+  std::sort(FuncsByPC.begin(), FuncsByPC.end());
 }
 
 void TracePC::HandleNewObservedPC(uintptr_t PC) {
-  // TODO(yln)
+  Printf("new PC: %p\nsearching [size %d] in: ", PC, FuncsByPC.size());
+  std::for_each(FuncsByPC.begin(), FuncsByPC.end(), [](const FInfo &F){
+    Printf("%p (rem: %d), ", F.EntryBlockPC, F.NumUnobservedPCs);
+  });
+  Printf("\n");
+  auto I = std::upper_bound(FuncsByPC.begin(), FuncsByPC.end(), FInfo{PC});
+  assert(I != FuncsByPC.begin());
+  --I;
+  Printf("Found: %p\n\n", I->EntryBlockPC);
+  assert(I != FuncsByPC.end());
+  assert(I->NumUnobservedPCs > 0); // We require that this function is only called once per PC
+  I->NumUnobservedPCs--;
+  if (I->NumUnobservedPCs == 0) {
+    PrintPC("\tCF_DIVERSITY: %p %F %L\n", "\tCF_DIVERSITY: %p\n", PC + 1);
+    Printf("\t\tActivated variant %d\n", 2);
+  }
 }
 
 void TracePC::UpdateObservedPCs() {

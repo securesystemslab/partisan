@@ -162,16 +162,14 @@ private:
   size_t NumPCsInPCTables;
 
   struct FInfo {
-    uintptr_t Address;
-    Set<uintptr_t> UnobservedPCs;
-
-    explicit FInfo(const uintptr_t Address) : Address(Address) {}
+    uintptr_t EntryBlockPC; // Function address
+    uint32_t NumUnobservedPCs;
 
     bool operator<(const FInfo &FI) const {
-      return Address < FI.Address;
+      return EntryBlockPC < FI.EntryBlockPC;
     }
   };
-  Vector<FInfo> FuncsByAddress;
+  Vector<FInfo> FuncsByPC;
 
   void HandleNewObservedPC(uintptr_t PC);
 
