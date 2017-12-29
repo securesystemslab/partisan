@@ -37,13 +37,21 @@ static void ensure_capacity() {
   assert(modules);
 }
 
-// Register all functions in a module
 void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count) {
   ensure_capacity();
 
   module_t m = { funcs, rand_ptrs, f_count };
-  modules[m_count] = m;
-  m_count++;
+  modules[m_count++] = m;
+}
+
+void __cf_activate_variant(uintptr_t func, uint32_t variant_no) {
+  FOR_FUNCTION(f)
+    if (f->variants[0] == func) {
+      modules[_mi].rand_ptrs[_fi] = f->variants[variant_no];
+      return;
+    }
+  FOR_FUNCTION_END
+  assert(0); // Function not found/randomized
 }
 
 __attribute__ ((constructor(0)))
