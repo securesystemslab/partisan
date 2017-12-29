@@ -161,6 +161,9 @@ void TracePC::InitFunctionInfos() {
   std::sort(FuncsByPC.begin(), FuncsByPC.end());
 }
 
+// Defined in [ControlFlowRuntime.c]
+extern "C" void __cf_activate_variant(uintptr_t func, uint32_t variant_no);
+
 void TracePC::HandleNewObservedPC(uintptr_t PC) {
   Printf("new PC: %p\nsearching [size %d] in: ", PC, FuncsByPC.size());
   std::for_each(FuncsByPC.begin(), FuncsByPC.end(), [](const FInfo &F){
@@ -175,6 +178,7 @@ void TracePC::HandleNewObservedPC(uintptr_t PC) {
   assert(I->NumUnobservedPCs > 0); // We require that this function is only called once per PC
   I->NumUnobservedPCs--;
   if (I->NumUnobservedPCs == 0) {
+    __cf_activate_variant(I->EntryBlockPC, 2);
     PrintPC("\tCF_DIVERSITY: %p %F %L\n", "\tCF_DIVERSITY: %p\n", PC + 1);
     Printf("\t\tActivated variant %d\n", 2);
   }
