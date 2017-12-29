@@ -145,7 +145,16 @@ void TracePC::HandleCallerCallee(uintptr_t Caller, uintptr_t Callee) {
 }
 
 void TracePC::InitFunctionInfos() {
-  // TODO(yln)
+  for (size_t i = 0; i < NumPCTables; i++) {
+    auto& M = ModulePCTable[i];
+    for (auto* E = M.Start; E < M.Stop; E++) {
+      if (E->PCFlags & 1) // PC for function entry block
+        FuncsByAddress.emplace_back(E->PC);
+
+      FuncsByAddress.back().UnobservedPCs.insert(E->PC);
+    }
+  }
+  std::sort(FuncsByAddress.begin(), FuncsByAddress.end());
 }
 
 void TracePC::HandleNewObservedPC(uintptr_t PC) {

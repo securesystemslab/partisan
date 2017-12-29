@@ -47,6 +47,7 @@ void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count) {
 void __cf_activate_variant(uintptr_t func, uint32_t variant_no) {
   FOR_FUNCTION(f)
     if (f->variants[0] == func) {
+      assert(variant_no < f->v_count);
       modules[_mi].rand_ptrs[_fi] = f->variants[variant_no];
       return;
     }

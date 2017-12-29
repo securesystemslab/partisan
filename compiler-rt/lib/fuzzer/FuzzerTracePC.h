@@ -164,8 +164,14 @@ private:
   struct FInfo {
     uintptr_t Address;
     Set<uintptr_t> UnobservedPCs;
+
+    explicit FInfo(const uintptr_t Address) : Address(Address) {}
+
+    bool operator<(const FInfo &FI) const {
+      return Address < FI.Address;
+    }
   };
-  Vector<FInfo> FuncsByPC;
+  Vector<FInfo> FuncsByAddress;
 
   void HandleNewObservedPC(uintptr_t PC);
 
