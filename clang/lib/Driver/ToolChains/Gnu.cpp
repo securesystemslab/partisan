@@ -312,8 +312,8 @@ static bool getPIE(const ArgList &Args, const toolchains::Linux &ToolChain) {
 
 static void addControlFlowRT(const ToolChain &TC, const ArgList &Args,
                              ArgStringList &CmdArgs) {
-  // Control-flow runtime requires pthread library.
-  CmdArgs.push_back("-lpthread");
+//  // Control-flow runtime requires pthread library.
+//  CmdArgs.push_back("-lpthread");
 
   auto LibExt = Args.hasArg(options::OPT_shared) ? ".so" : ".a";
   auto ControlFlowRT = TC.getDriver().Dir + "/../lib/libcontrol_flow_rt" + LibExt;
