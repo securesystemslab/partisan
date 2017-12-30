@@ -103,6 +103,8 @@ class TracePC {
   void PrintFeatureSet();
 
   void InitFunctionInfos();
+  void ActivateFullSanitization();
+  void RestoreSanitizationLevels();
 
   void PrintModuleInfo();
 

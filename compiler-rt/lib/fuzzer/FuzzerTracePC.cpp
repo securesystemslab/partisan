@@ -163,6 +163,19 @@ void TracePC::InitFunctionInfos() {
 
 // Defined in [ControlFlowRuntime.c]
 extern "C" void __cf_activate_variant(uintptr_t func, uint32_t variant_no);
+extern "C" void __cf_activate_variants(uint32_t variant_no);
+
+void TracePC::ActivateFullSanitization() {
+  __cf_activate_variants(/* variant_No */ 0);
+}
+
+void TracePC::RestoreSanitizationLevels() {
+  for (FInfo &I : FuncsByPC) {
+    if (I.NumUnobservedPCs == 0) {
+      __cf_activate_variant(I.EntryBlockPC, 2);
+    }
+  }
+}
 
 void TracePC::HandleNewObservedPC(uintptr_t PC) {
   Printf("new PC: %p\nsearching [size %d] in: ", PC, FuncsByPC.size());

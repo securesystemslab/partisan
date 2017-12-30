@@ -653,6 +653,12 @@ void Fuzzer::MutateAndTestOne() {
                             /*DuringInitialCorpusExecution*/ false);
     if (NewCov) {
       ReportNewCoverage(&II, {CurrentUnitData, CurrentUnitData + Size});
+
+      // Re-execute with full sanitization
+      TPC.ActivateFullSanitization();
+      ExecuteCallback(CurrentUnitData, Size);
+      TPC.RestoreSanitizationLevels();
+
       break;  // We will mutate this input more in the next rounds.
     }
     if (Options.ReduceDepth && !FoundUniqFeatures)
