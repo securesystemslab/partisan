@@ -90,11 +90,10 @@ public:
 private:
   MInfo analyzeModule(Module& M);
 
-  void createTrampoline(FInfo &I, GlobalVariable *RandPtrArray);
-  void randomizeCallSites(const FInfo &I, GlobalVariable *RandPtrArray);
-  void convertOriginalToVariant(FInfo &I);
+  void createTrampoline(FInfo& I, GlobalVariable* RandPtrArray);
+  void randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray);
   void createVariant(FInfo& I);
-  void removeSanitizerAttributes(Function *F);
+  void removeSanitizerAttributes(Function* F);
   void removeSanitizerChecks(Function* F, bool removeSanCov);
 
   GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
@@ -142,7 +141,6 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   for (FInfo& i : mi.Fns) {
     createTrampoline(i, mi.RandPtrArray);
     randomizeCallSites(i, mi.RandPtrArray);
-    convertOriginalToVariant(i);
   }
 
   // Create more variants
@@ -243,23 +241,16 @@ static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IR
 // The optional !dereferenceable metadata must reference a single metadata name <deref_bytes_node> corresponding to a metadata node with one i64 entry. The existence of the !dereferenceable metadata on the instruction tells the optimizer that the value loaded is known to be dereferenceable. The number of bytes known to be dereferenceable is specified by the integer value in the metadata node. This is analogous to the ‘’dereferenceable’’ attribute on parameters and return values. This metadata can only be applied to loads of a pointer type.
 }
 
-void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArray) {
+static void createTrampolineBody(FInfo &I, GlobalVariable* RandPtrArray) {
   auto* F = I.Original;
 
-  auto* NF = Function::Create(F->getFunctionType(), F->getLinkage());
-  NF->takeName(F);
-  NF->copyAttributesFrom(F);
-  removeSanitizerAttributes(NF);
-  NF->addFnAttr("cf-trampoline");
-
-  // Collect arguments (no var args)
   std::vector<Value*> Args;
-  for (auto& A : NF->args()) {
+  for (auto& A : I.Trampoline->args()) {
     A.setName((F->arg_begin() + A.getArgNo())->getName());
     Args.push_back(&A);
   }
 
-  auto* BB = BasicBlock::Create(F->getContext(), "", NF);
+  auto* BB = BasicBlock::Create(F->getContext(), "", I.Trampoline);
   IRBuilder<> B(BB);
 
   auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
@@ -269,9 +260,30 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable *RandPtrArr
 
   auto* RetVal = F->getReturnType()->isVoidTy() ? nullptr : Call;
   B.CreateRet(RetVal);
+}
 
-  F->getParent()->getFunctionList().insert(F->getIterator(), NF);
+static void setVariantName(Function *F, StringRef Name, unsigned VariantIndex) {
+  auto Index = std::to_string(VariantIndex);
+  F->setName(Name +"_"+ Index);
+  F->addFnAttr("cf-variant", Index);
+}
+
+void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable* RandPtrArray) {
+  auto* F = I.Original;
+  auto* NF = Function::Create(F->getFunctionType(), F->getLinkage());
   I.Trampoline = NF;
+
+  NF->takeName(F);
+  NF->copyAttributesFrom(F);
+  removeSanitizerAttributes(NF);
+  NF->addFnAttr("cf-trampoline");
+  createTrampolineBody(I, RandPtrArray);
+  F->getParent()->getFunctionList().insert(F->getIterator(), NF);
+
+  // Convert original function into first variant
+  setVariantName(F, I.Name, 0);
+  F->setLinkage(GlobalValue::PrivateLinkage);
+  I.Variants.push_back(F);
 }
 
 static bool isSanCovUser(const User* U) {
@@ -307,22 +319,6 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
   for (auto* C : Constants) {
     C->handleOperandChange(F, I.Trampoline);
   }
-}
-
-static void setVariantName(Function *F, StringRef Name, unsigned VariantIndex) {
-  auto Index = std::to_string(VariantIndex);
-  F->setName(Name +"_"+ Index);
-  F->addFnAttr("cf-variant", Index);
-}
-
-void ControlFlowDiversity::convertOriginalToVariant(FInfo &I) {
-  auto* F = I.Original;
-
-  setVariantName(F, I.Name, 0);
-  F->setLinkage(GlobalValue::PrivateLinkage);
-
-  // First variant
-  I.Variants.push_back(F);
 }
 
 void ControlFlowDiversity::createVariant(FInfo& I) {
