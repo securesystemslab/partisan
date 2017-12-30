@@ -286,9 +286,11 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable* RandPtrArr
   I.Variants.push_back(F);
 }
 
-static bool isSanCovUser(const User* U) {
-  return U->getName().startswith(SanCovVarPrefix)
-      || std::any_of(U->user_begin(), U->user_end(), isSanCovUser);
+static bool isSanCovUser(const User* U, unsigned Level = 5) {
+  if (U->getName().startswith(SanCovVarPrefix))
+    return true;
+  auto Recurse = [Level](const User *U) { return isSanCovUser(U, Level - 1); };
+  return Level > 0 && std::any_of(U->user_begin(), U->user_end(), Recurse);
 }
 
 // See [Value::replaceUsesExceptBlockAddr] for algorithm template
@@ -349,11 +351,13 @@ static bool isNoSanitize(const Instruction* I) {
   return I->getMetadata("nosanitize") != nullptr;
 }
 
-static bool hasSanCovOp(const Value* V) {
+static bool hasSanCovOp(const Value* V, unsigned Level = 5) {
+  if (V->getName().startswith(SanCovVarPrefix) ||
+      V->getName().startswith(SanCovFnPrefix))
+    return true;
+  auto Recurse = [Level](const Value *V) { return hasSanCovOp(V, Level - 1); };
   auto* U = dyn_cast<User>(V);
-  return V->getName().startswith(SanCovVarPrefix)
-      || V->getName().startswith(SanCovFnPrefix)
-      || (U && std::any_of(U->op_begin(), U->op_end(), hasSanCovOp));
+  return Level > 0 && U && std::any_of(U->op_begin(), U->op_end(), Recurse);
 }
 
 static bool shouldRemove(const Instruction* I, bool removeSanCov) {
