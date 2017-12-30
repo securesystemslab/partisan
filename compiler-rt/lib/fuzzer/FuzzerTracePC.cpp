@@ -150,14 +150,14 @@ void TracePC::InitFunctionInfos() {
     for (auto* E = M.Start; E < M.Stop; E++) {
       if (E->PCFlags & 1) {// PC for function entry block
         FuncsByPC.emplace_back(FInfo{E->PC, 0});
-        Printf("\nfunction[%p]: ", E->PC);
+//        Printf("\nfunction[%p]: ", E->PC);
       }
 
       FuncsByPC.back().NumUnobservedPCs++;
-      Printf(", %p", E->PC);
+//      Printf(", %p", E->PC);
     }
   }
-  Printf("\n\n");
+//  Printf("\n\n");
   std::sort(FuncsByPC.begin(), FuncsByPC.end());
 }
 
@@ -182,23 +182,18 @@ void TracePC::RestoreSanitizationLevels() {
 }
 
 void TracePC::HandleNewObservedPC(uintptr_t PC) {
-  Printf("new PC: %p\nsearching [size %d] in: ", PC, FuncsByPC.size());
-  std::for_each(FuncsByPC.begin(), FuncsByPC.end(), [](const FInfo &F){
-    Printf("%p (rem: %d), ", F.EntryBlockPC, F.NumUnobservedPCs);
-  });
-  Printf("\n");
   auto I = std::upper_bound(FuncsByPC.begin(), FuncsByPC.end(), FInfo{PC});
   assert(I != FuncsByPC.begin());
   --I;
-  Printf("Found: %p\n\n", I->EntryBlockPC);
+//  Printf("New PC: %p, found function: %p\n", PC, I->EntryBlockPC);
   assert(I != FuncsByPC.end());
   assert(I->NumUnobservedPCs > 0); // We require that this function is only called once per PC
   I->NumUnobservedPCs--;
   if (I->NumUnobservedPCs == 0) {
     auto VariantNo = V_CoverageOnly;
     __cf_activate_variant(I->EntryBlockPC, VariantNo);
-    PrintPC("\tCF_DIVERSITY: %p %F %L\n", "\tCF_DIVERSITY: %p\n", PC + 1);
-    Printf("\t\tActivated variant %d\n", VariantNo);
+    Printf("\tCFD: Activated variant %u for ", VariantNo);
+    PrintPC("%f %L\n", "%p\n", PC + 1);
   }
 }
 
@@ -206,9 +201,9 @@ void TracePC::UpdateObservedPCs() {
   Vector<uintptr_t> CoveredFuncs;
   auto ObservePC = [&](uintptr_t PC) {
     if (ObservedPCs.insert(PC).second) {
-      HandleNewObservedPC(PC);
       if (DoPrintNewPCs)
         PrintPC("\tNEW_PC: %p %F %L\n", "\tNEW_PC: %p\n", PC + 1);
+      HandleNewObservedPC(PC);
     }
   };
 
