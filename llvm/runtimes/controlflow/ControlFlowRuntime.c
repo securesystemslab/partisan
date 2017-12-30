@@ -55,10 +55,14 @@ void __cf_activate_variant(uintptr_t func, uint32_t variant_no) {
   assert(0); // Function not found/randomized
 }
 
+void __cf_activate_variants(uint32_t variant_no) {
+  FOR_FUNCTION(f)
+    assert(variant_no < f->v_count);
+    modules[_mi].rand_ptrs[_fi] = f->variants[variant_no];
+  FOR_FUNCTION_END
+}
+
 __attribute__ ((constructor(0)))
 static void initialize_runtime() {
-  // Initialize pointer arrays with variant 0
-  FOR_FUNCTION(f)
-    modules[_mi].rand_ptrs[_fi] = f->variants[0];
-  FOR_FUNCTION_END
+  __cf_activate_variants(/* variant_no */ 0);
 }
