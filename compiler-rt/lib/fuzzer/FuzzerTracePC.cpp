@@ -165,14 +165,18 @@ void TracePC::InitFunctionInfos() {
 extern "C" void __cf_activate_variant(uintptr_t func, uint32_t variant_no);
 extern "C" void __cf_activate_variants(uint32_t variant_no);
 
+constexpr uint32_t V_FullSanitization = 0;
+constexpr uint32_t V_CoverageOnly = 1;
+constexpr uint32_t V_Unsanitized = 2;
+
 void TracePC::ActivateFullSanitization() {
-  __cf_activate_variants(/* variant_No */ 0);
+  __cf_activate_variants(V_FullSanitization);
 }
 
 void TracePC::RestoreSanitizationLevels() {
   for (FInfo &I : FuncsByPC) {
     if (I.NumUnobservedPCs == 0) {
-      __cf_activate_variant(I.EntryBlockPC, 2);
+      __cf_activate_variant(I.EntryBlockPC, V_CoverageOnly);
     }
   }
 }
@@ -191,9 +195,10 @@ void TracePC::HandleNewObservedPC(uintptr_t PC) {
   assert(I->NumUnobservedPCs > 0); // We require that this function is only called once per PC
   I->NumUnobservedPCs--;
   if (I->NumUnobservedPCs == 0) {
-    __cf_activate_variant(I->EntryBlockPC, 2);
+    auto VariantNo = V_CoverageOnly;
+    __cf_activate_variant(I->EntryBlockPC, VariantNo);
     PrintPC("\tCF_DIVERSITY: %p %F %L\n", "\tCF_DIVERSITY: %p\n", PC + 1);
-    Printf("\t\tActivated variant %d\n", 2);
+    Printf("\t\tActivated variant %d\n", VariantNo);
   }
 }
 
