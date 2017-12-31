@@ -482,8 +482,8 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
   // has some weird interaction when simplifying CFGs that had critical edges added by SanCov.
 
   // TODO(yln): copied from removeSanitizerInstructions for now
-  for (auto BBIt = F->begin(); BBIt != F->end(); ) {
-    BasicBlock& BB = *(BBIt++); // Advance iterator since SimplifyCFG might delete the current BB
+  for (auto BBI = F->begin(), E = F->end(); BBI != E;) {
+    auto& BB = *(BBI++); // Advance iterator since we might delete the this BB
     simplifyCFG(&BB, TTI, /* BonusInstThreshold */ 1);
   }
 }
