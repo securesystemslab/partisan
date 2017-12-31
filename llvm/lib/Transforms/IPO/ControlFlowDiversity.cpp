@@ -467,6 +467,7 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
     }
   }
 
+  // TODO(yln): this shouldn't be needed anymore, since we schedule a whole run of CFGSimplifyPass
   for (auto BBIt = F->begin(); BBIt != F->end(); ) {
     BasicBlock& BB = *(BBIt++); // Advance iterator since SimplifyCFG might delete the current BB
     simplifyCFG(&BB, TTI, BonusInstThreshold);
@@ -480,12 +481,6 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
   // This is here for sanitizers (like UBSan) that insert instrumentation, before our CFD pass.
   // The current issue is that this also partly removes SanCov instrumentation, and
   // has some weird interaction when simplifying CFGs that had critical edges added by SanCov.
-
-  // TODO(yln): copied from removeSanitizerInstructions for now
-  for (auto BBI = F->begin(), E = F->end(); BBI != E;) {
-    auto& BB = *(BBI++); // Advance iterator since we might delete the this BB
-    simplifyCFG(&BB, TTI, /* BonusInstThreshold */ 1);
-  }
 }
 
 static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, size_t size, Constant* init) {
