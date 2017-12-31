@@ -363,12 +363,12 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   I.Variants.push_back(NF);
 }
 
-static bool isCoverageInst(const Instruction &I) {
-  if (!I.use_empty())
-    return false;
-  return containsOperand(&I, [](const Value* V) {
+static bool isCoverageInst(const Instruction& I) {
+  return I.use_empty()
+      && !isa<TerminatorInst>(I)
+      && containsOperand(&I, [](const Value* V) {
     return V->getName().startswith(SanCovVarPrefix)
-           || V->getName().startswith(SanCovFnPrefix);
+        || V->getName().startswith(SanCovFnPrefix);
   });
 }
 
