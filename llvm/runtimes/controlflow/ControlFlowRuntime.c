@@ -62,7 +62,7 @@ void __cf_activate_variants(uint32_t variant_no) {
   FOR_FUNCTION_END
 }
 
-__attribute__ ((constructor(0)))
+__attribute__ ((constructor(/* Priority */ 0)))
 static void initialize_runtime() {
   __cf_activate_variants(/* variant_no */ 0);
 }

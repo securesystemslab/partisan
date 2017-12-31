@@ -7,8 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This module pass creates run-time control flow diversity by cloning
-// functions and randomly switching between variants at run-time.
+// This module pass enables control-flow diversity.
 //
 //===----------------------------------------------------------------------===//
 
