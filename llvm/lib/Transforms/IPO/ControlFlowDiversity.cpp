@@ -196,15 +196,6 @@ static bool isModuleCtor(const Function& F) {
   });
 }
 
-static bool hasMemoryAccess(const Function& F) {
-  switch (DiversifyByMemoryAccess) {
-    case ByMemoryAccess::All: return true;
-    case ByMemoryAccess::IgnoreNoAccess: return !F.doesNotAccessMemory();
-    case ByMemoryAccess::IgnoreReadOnly: return !F.onlyReadsMemory();
-  }
-  llvm_unreachable("unexpected enum value");
-}
-
 static bool isHotEnough(const Function& F) {
   switch (DiversifyByHotness) {
     case ByHotness::All: return true;
@@ -214,8 +205,18 @@ static bool isHotEnough(const Function& F) {
   llvm_unreachable("unexpected enum value");
 }
 
+static bool hasMemoryAccess(const Function& F) {
+  switch (DiversifyByMemoryAccess) {
+    case ByMemoryAccess::All: return true;
+    case ByMemoryAccess::IgnoreNoAccess: return !F.doesNotAccessMemory();
+    case ByMemoryAccess::IgnoreReadOnly: return !F.onlyReadsMemory();
+  }
+  llvm_unreachable("unexpected enum value");
+}
+
 static bool shouldRandomize(const Function& F) {
   return !F.hasFnAttribute(Attribute::NoControlFlowDiversity)
+      && !F.doesNotReturn()
       && !isModuleCtor(F)
       && isHotEnough(F)
       && hasMemoryAccess(F);
