@@ -369,18 +369,14 @@ static bool isNoSanitize(const Instruction* I) {
   return I->getMetadata("nosanitize") != nullptr;
 }
 
-static bool hasSanCovOp(const Value* V, unsigned Level = 5) {
-  if (V->getName().startswith(SanCovVarPrefix) ||
-      V->getName().startswith(SanCovFnPrefix))
-    return true;
-  auto Recurse = [Level](const Value *V) { return hasSanCovOp(V, Level - 1); };
-  auto* U = dyn_cast<User>(V);
-  return Level > 0 && U && std::any_of(U->op_begin(), U->op_end(), Recurse);
-}
-
 static bool shouldRemove(const Instruction* I, bool removeSanCov) {
-  if (!I->use_empty()) return false;
-  return hasSanCovOp(I) ? removeSanCov : isNoSanitize(I);
+  if (!I->use_empty())
+    return false;
+  auto isSanCov = containsOperand(I, [](const Value* V) {
+    return V->getName().startswith(SanCovVarPrefix)
+        || V->getName().startswith(SanCovFnPrefix);
+  });
+  return isSanCov ? removeSanCov : isNoSanitize(I);
 }
 
 static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI, bool removeSanCov) {
