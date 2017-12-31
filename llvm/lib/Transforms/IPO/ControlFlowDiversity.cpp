@@ -173,6 +173,24 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   return true;
 }
 
+template<class Predicate>
+static bool containsOperand(const Value *V, Predicate Pred, unsigned Level = 5) {
+  if (Pred(V))
+    return true;
+  auto Recurse = [Level, Pred](const Value* V) {
+    return containsOperand(V, Pred, Level - 1);
+  };
+  auto* U = dyn_cast<User>(V);
+  return Level > 0 && U && std::any_of(U->op_begin(), U->op_end(), Recurse);
+}
+
+static bool isModuleCtor(const Function& F) {
+  auto* GV = F.getParent()->getGlobalVariable("llvm.global_ctors");
+  return GV && containsOperand(GV, [&F](const Value* V) {
+    return V == &F;
+  });
+}
+
 static bool hasMemoryAccess(const Function& F) {
   switch (DiversifyByMemoryAccess) {
     case ByMemoryAccess::All: return true;
@@ -193,7 +211,7 @@ static bool isHotEnough(const Function& F) {
 
 static bool shouldRandomize(const Function& F) {
   return !F.hasFnAttribute(Attribute::NoControlFlowDiversity)
-      && !F.getName().contains(".module_ctor")
+      && !isModuleCtor(F)
       && isHotEnough(F)
       && hasMemoryAccess(F);
 }
