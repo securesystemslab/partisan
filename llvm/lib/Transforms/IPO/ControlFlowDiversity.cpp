@@ -274,6 +274,7 @@ static void createTrampolineBody(FInfo &I, GlobalVariable* RandPtrArray) {
   auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
   auto* Call = B.CreateCall(VarPtr, Args);
   Call->setCallingConv(F->getCallingConv());
+  Call->setAttributes(F->getAttributes());
   Call->setTailCallKind(CallInst::TCK_MustTail);
 
   auto* RetVal = F->getReturnType()->isVoidTy() ? nullptr : Call;
