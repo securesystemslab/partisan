@@ -93,8 +93,9 @@ private:
   void createTrampoline(FInfo& I, GlobalVariable* RandPtrArray);
   void randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray);
   void createVariant(FInfo& I);
+  void removeCoverage(Function* F);
   void removeSanitizerAttributes(Function* F);
-  void removeSanitizerChecks(Function* F, bool removeSanCov);
+  void removeSanitizerChecks(Function* F);
 
   GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
   Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
@@ -137,20 +138,25 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   // Create randomized ptr array
   mi.RandPtrArray = emitPtrArray(M, "rand_ptrs", mi.Fns.size());
 
-  // Create trampoline, randomize call sites, make first variant
+  // Create trampoline, make first variant, randomize call sites
   for (FInfo& i : mi.Fns) {
     createTrampoline(i, mi.RandPtrArray);
     randomizeCallSites(i, mi.RandPtrArray);
   }
 
   // Create more variants
-  // 0) Coverage and sanitization (converted from original)
-  // 1) Coverage only
-  // 2) None
   for (FInfo& i : mi.Fns) {
-    createVariant(i); createVariant(i);
-    removeSanitizerChecks(i.Variants[1], /* removeSanCov */ false);
-    removeSanitizerChecks(i.Variants[2], /* removeSanCov */ true);
+    // 0) Coverage and sanitization
+    // Converted from original
+
+    // 1) Coverage only
+    createVariant(i);
+    removeSanitizerChecks(i.Variants[1]);
+
+    // 2) None
+    createVariant(i);
+    removeCoverage(i.Variants[2]);
+    removeSanitizerChecks(i.Variants[2]);
   }
 
   // Create ptr arrays.
@@ -318,9 +324,8 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
 //  F->removeDeadConstantUsers(); // TODO(yln): needed?
 
   SmallPtrSet<Constant*, 8> Constants;
-  auto UI = F->use_begin(), E = F->use_end();
-  while (UI != E) {
-    auto& Use = *UI++;
+  for (auto UI = F->use_begin(), E = F->use_end(); UI != E;) {
+    auto& Use = *UI++; // Advance iterator since we might remove this use
     auto* User = Use.getUser();
 
     if (isa<BlockAddress>(User) || isSanCovUser(User))
@@ -358,6 +363,31 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   I.Variants.push_back(NF);
 }
 
+static bool isCoverageInst(const Instruction &I) {
+  if (!I.use_empty())
+    return false;
+  return containsOperand(&I, [](const Value* V) {
+    return V->getName().startswith(SanCovVarPrefix)
+           || V->getName().startswith(SanCovFnPrefix);
+  });
+}
+
+void ControlFlowDiversity::removeCoverage(Function* F) {
+  for (auto BI = inst_begin(F), E = inst_end(F); BI != E;) {
+    auto& I = *BI++;  // Advance iterator since we might delete this instruction
+
+    if (isCoverageInst(I)) {
+      SmallVector<Value *, 4> Operands(I.operands());
+      I.eraseFromParent();
+      for (auto *Op : Operands) {
+        RecursivelyDeleteTriviallyDeadInstructions(Op);
+      }
+    }
+  }
+  // This leaves empty basic blocks (inserted by SanCov to track critical edges)
+  // which will be cleaned up in removeSanitizerChecks.
+}
+
 void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
   F->removeFnAttr(Attribute::SanitizeAddress);
   F->removeFnAttr(Attribute::SanitizeHWAddress);
@@ -370,23 +400,17 @@ static bool isNoSanitize(const Instruction* I) {
   return I->getMetadata("nosanitize") != nullptr;
 }
 
-static bool shouldRemove(const Instruction* I, bool removeSanCov) {
-  if (!I->use_empty())
-    return false;
-  auto isSanCov = containsOperand(I, [](const Value* V) {
-    return V->getName().startswith(SanCovVarPrefix)
-        || V->getName().startswith(SanCovFnPrefix);
-  });
-  return isSanCov ? removeSanCov : isNoSanitize(I);
+static bool shouldRemove(const Instruction* I) {
+  return I->use_empty() && isNoSanitize(I);
 }
 
-static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI, bool removeSanCov) {
+static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI) {
   constexpr unsigned BonusInstThreshold = 1;
 
   // Mark initial set of instructions for removal
   std::vector<Instruction*> removed;
   for (Instruction& I : instructions(*F)) {
-    if (shouldRemove(&I, removeSanCov)) {
+    if (shouldRemove(&I)) {
       removed.push_back(&I);
     }
   }
@@ -437,7 +461,7 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
     // Mark instructions that are no longer used
     for (Value* V : Operands) {
       Instruction* Op = dyn_cast<Instruction>(V);
-      if (Op && shouldRemove(Op, removeSanCov) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
+      if (Op && shouldRemove(Op) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
         removed.push_back(Op);
       }
     }
@@ -449,10 +473,19 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
   }
 }
 
-void ControlFlowDiversity::removeSanitizerChecks(Function* F, bool removeSanCov) {
+void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
   auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
   removeSanitizerAttributes(F);
-  removeSanitizerInstructions(F, TTI, removeSanCov);
+  // removeSanitizerInstructions(F, TTI); // TODO(yln): Support UBSan
+  // This is here for sanitizers (like UBSan) that insert instrumentation, before our CFD pass.
+  // The current issue is that this also partly removes SanCov instrumentation, and
+  // has some weird interaction when simplifying CFGs that had critical edges added by SanCov.
+
+  // TODO(yln): copied from removeSanitizerInstructions for now
+  for (auto BBIt = F->begin(); BBIt != F->end(); ) {
+    BasicBlock& BB = *(BBIt++); // Advance iterator since SimplifyCFG might delete the current BB
+    simplifyCFG(&BB, TTI, /* BonusInstThreshold */ 1);
+  }
 }
 
 static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, size_t size, Constant* init) {
