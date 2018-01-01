@@ -114,6 +114,7 @@ ModulePass* llvm::createControlFlowDiversityPass() {
 
 void ControlFlowDiversity::getAnalysisUsage(AnalysisUsage& AU) const {
   AU.addRequired<TargetTransformInfoWrapperPass>();
+  ModulePass::getAnalysisUsage(AU);
 }
 
 bool ControlFlowDiversity::runOnModule(Module& M) {
