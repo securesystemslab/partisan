@@ -315,7 +315,7 @@ void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable* RandPtrArr
 static bool isSanCovUser(const User* U, unsigned Level = 5) {
   if (U->getName().startswith(SanCovVarPrefix))
     return true;
-  auto Recurse = [Level](const User *U) { return isSanCovUser(U, Level - 1); };
+  auto Recurse = [Level](const User* U) { return isSanCovUser(U, Level - 1); };
   return Level > 0 && std::any_of(U->user_begin(), U->user_end(), Recurse);
 }
 
@@ -325,21 +325,19 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
 //  F->removeDeadConstantUsers(); // TODO(yln): needed?
 
   SmallPtrSet<Constant*, 8> Constants;
-  for (auto UI = F->use_begin(), E = F->use_end(); UI != E;) {
-    auto& Use = *UI++; // Advance iterator since we might remove this use
-    auto* User = Use.getUser();
+  for (auto UI = F->user_begin(), E = F->user_end(); UI != E;) {
+    User* U = *UI++; // Advance iterator since we might remove this use
 
-    if (isa<BlockAddress>(User) || isSanCovUser(User))
-      continue;
-
-    if (auto CS = CallSite(User)) {
+    if (auto CS = CallSite(U)) { // Direct calls
       IRBuilder<> B(CS.getInstruction());
       auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
       CS.setCalledFunction(VarPtr);
-    } else if (isa<Constant>(User) && !isa<GlobalValue>(User)) {
-      Constants.insert(cast<Constant>(User));
+    } else if (auto* C = dyn_cast<Constant>(U)) { // Address-taken
+      assert(!isa<GlobalValue>(C));
+      if (!isa<BlockAddress>(U) && !isSanCovUser(C))
+        Constants.insert(C);
     } else {
-      Use.set(I.Trampoline);
+      llvm_unreachable("unexpected use of function");
     }
   }
 
@@ -378,9 +376,9 @@ void ControlFlowDiversity::removeCoverage(Function* F) {
     auto& I = *BI++;  // Advance iterator since we might delete this instruction
 
     if (isCoverageInst(I)) {
-      SmallVector<Value *, 4> Operands(I.operands());
+      SmallVector<Value*, 4> Operands(I.operands());
       I.eraseFromParent();
-      for (auto *Op : Operands) {
+      for (auto* Op : Operands) {
         RecursivelyDeleteTriviallyDeadInstructions(Op);
       }
     }
