@@ -325,20 +325,24 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
 //  F->removeDeadConstantUsers(); // TODO(yln): needed?
 
   SmallPtrSet<Constant*, 8> Constants;
-  for (auto UI = F->user_begin(), E = F->user_end(); UI != E;) {
-    User* U = *UI++; // Advance iterator since we might remove this use
+  for (auto UI = F->use_begin(), E = F->use_end(); UI != E;) {
+    auto& U = *UI++; // Advance iterator since we might remove this use
 
-    if (auto CS = CallSite(U)) { // Direct calls
-      IRBuilder<> B(CS.getInstruction());
-      auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
-      CS.setCalledFunction(VarPtr);
-    } else if (auto* C = dyn_cast<Constant>(U)) { // Address-taken
-      assert(!isa<GlobalValue>(C));
-      if (!isa<BlockAddress>(U) && !isSanCovUser(C))
-        Constants.insert(C);
-    } else {
-      llvm_unreachable("unexpected use of function");
+    if (auto CS = CallSite(U.getUser())) {
+      if (CS.getCalledFunction() == F) {
+        IRBuilder<> B(CS.getInstruction());
+        auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
+        CS.setCalledFunction(VarPtr);
+        continue;
+      }
     }
+    if (auto* C = dyn_cast<Constant>(U.getUser())) {
+      assert(!isa<GlobalValue>(C));
+      if (!isa<BlockAddress>(C) && !isSanCovUser(C))
+        Constants.insert(C);
+      continue;
+    }
+    U.set(I.Trampoline);
   }
 
   for (auto* C : Constants) {
