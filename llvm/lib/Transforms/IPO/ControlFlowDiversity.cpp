@@ -288,13 +288,13 @@ static void createTrampolineBody(FInfo &I, GlobalVariable* RandPtrArray) {
   B.CreateRet(RetVal);
 }
 
-static void setVariantName(Function *F, StringRef Name, unsigned VariantIndex) {
-  auto Index = std::to_string(VariantIndex);
-  F->setName(Name +"_"+ Index);
-  F->addFnAttr("cf-variant", Index);
+static void setVariantName(Function* F, StringRef Name, unsigned VariantNo) {
+  auto N = std::to_string(VariantNo);
+  F->setName(Name +"_"+ N);
+  F->addFnAttr("cf-variant", N);
 }
 
-void ControlFlowDiversity::createTrampoline(FInfo &I, GlobalVariable* RandPtrArray) {
+void ControlFlowDiversity::createTrampoline(FInfo& I, GlobalVariable* RandPtrArray) {
   auto* F = I.Original;
   auto* NF = Function::Create(F->getFunctionType(), F->getLinkage());
   I.Trampoline = NF;
