@@ -337,10 +337,11 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
       }
     }
     if (auto* C = dyn_cast<Constant>(U.getUser())) {
-      assert(!isa<GlobalValue>(C));
-      if (!isa<BlockAddress>(C) && !isSanCovUser(C))
-        Constants.insert(C);
-      continue;
+      if (!isa<GlobalValue>(C)) {
+        if (!isa<BlockAddress>(C) && !isSanCovUser(C))
+          Constants.insert(C);
+        continue;
+      }
     }
     U.set(I.Trampoline);
   }
