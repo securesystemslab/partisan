@@ -96,7 +96,7 @@ private:
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerChecks(Function* F);
 
-  GlobalVariable* emitPtrArray(Module& M, StringRef name, size_t size, Constant* init = nullptr);
+  GlobalVariable* emitPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat = nullptr, Constant* Init = nullptr);
   Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
 
   void emitRuntimeMetadata(Module& M, MInfo& I);
@@ -159,9 +159,11 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     removeSanitizerChecks(i.Variants[2]);
   }
 
-  // Create ptr arrays.
+  // Create variant pointer arrays
   for (FInfo& i : mi.Fns) {
-    i.VariantArray = emitPtrArray(M, i.Name, i.Variants.size(), createFnPtrInit(M, i.Variants));
+    auto* Init = createFnPtrInit(M, i.Variants);
+    auto* Comdat = i.Original->getComdat();
+    i.VariantArray = emitPtrArray(M, i.Name, i.Variants.size(), Comdat, Init);
   }
 
   // Emit metadata for runtime randomization
@@ -303,6 +305,7 @@ void ControlFlowDiversity::createTrampoline(FInfo& I, GlobalVariable* RandPtrArr
   NF->copyAttributesFrom(F);
   removeSanitizerAttributes(NF);
   NF->addFnAttr("cf-trampoline");
+  NF->setComdat(F->getComdat());
   createTrampolineBody(I, RandPtrArray);
   F->getParent()->getFunctionList().insert(F->getIterator(), NF);
 
@@ -357,6 +360,7 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   // Clone function
   ValueToValueMapTy VMap;
   auto* NF = CloneFunction(I.Original, VMap);
+  NF->setComdat(I.Original->getComdat());
   setVariantName(NF, I.Name, VariantNo);
 
   // Place after previous variant
@@ -487,27 +491,30 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
   // has some weird interaction when simplifying CFGs that had critical edges added by SanCov.
 }
 
-static GlobalVariable* emitArray(Module& M, StringRef name, Type* elementType, size_t size, Constant* init) {
-  ArrayType* arrayType = ArrayType::get(elementType, size);
-  bool constant = true;
-  if (init == nullptr) {
-    init = ConstantAggregateZero::get(arrayType);
-    constant = false;
+// TODO(yln): different array functions don't do much anymore. Inline!
+static GlobalVariable* emitArray(Module &M, StringRef Name, Type *ElementTy, size_t Count, Comdat *Comdat, Constant *Init) {
+  auto* Ty = ArrayType::get(ElementTy, Count);
+  bool Constant = true;
+  if (Init == nullptr) {
+    Init = ConstantAggregateZero::get(Ty);
+    Constant = false;
   }
-  auto GV = new GlobalVariable(M, arrayType, constant, GlobalValue::PrivateLinkage, init, "__cf_gen_"+ name);
-  GV->setExternallyInitialized(!constant);
+  auto* GV = new GlobalVariable(M, Ty, Constant, GlobalValue::PrivateLinkage, Init, "__cf_gen_" + Name);
+  GV->setExternallyInitialized(!Constant);
+  GV->setComdat(Comdat);
   return GV;
 }
 
-// TODO(yln): different array functions don't do much anymore. Inline!
-static GlobalVariable* emitProbArray(Module& M, const FInfo& func) {
-  IntegerType* type = Type::getInt32Ty(M.getContext());
-  return emitArray(M, func.Name +"_prob", type, func.Variants.size(), /*init=*/ nullptr);
+static GlobalVariable* emitProbArray(Module& M, const FInfo& I) {
+  auto* Ty = Type::getInt32Ty(M.getContext());
+  auto Count = I.Variants.size();
+  auto* Comdat = I.Original->getComdat();
+  return emitArray(M, I.Name + "_prob", Ty, Count, Comdat, /* Init */ nullptr);
 }
 
-GlobalVariable* ControlFlowDiversity::emitPtrArray(Module& M, StringRef name, size_t size, Constant* init) {
-  IntegerType* type = Type::getInt64Ty(M.getContext()); // ptrs are stored as 64 bit ints
-  return emitArray(M, name, type, size, init);
+GlobalVariable* ControlFlowDiversity::emitPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat, Constant* Init) {
+  auto* Ty = Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
+  return emitArray(M, Name, Ty, Count, Comdat, Init);
 }
 
 Constant* ControlFlowDiversity::createFnPtrInit(Module& M, ArrayRef<Function*> variants) {
@@ -590,7 +597,7 @@ static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* Desc
 void ControlFlowDiversity::emitRuntimeMetadata(Module& M, MInfo& I) {
   auto* Ty = createDescTy(M);
   auto* Init = createDescInit(M, Ty, I.Fns);
-  auto* Array = emitArray(M, "descs", Ty, I.Fns.size(), Init);
+  auto* Array = emitArray(M, "descs", Ty, I.Fns.size(), /* Comdat */ nullptr, Init);
   createModuleCtor(M, Ty, Array, I);
 }
 
