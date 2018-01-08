@@ -505,13 +505,6 @@ static GlobalVariable* emitArray(Module &M, StringRef Name, Type *ElementTy, siz
   return GV;
 }
 
-static GlobalVariable* emitProbArray(Module& M, const FInfo& I) {
-  auto* Ty = Type::getInt32Ty(M.getContext());
-  auto Count = I.Variants.size();
-  auto* Comdat = I.Original->getComdat();
-  return emitArray(M, I.Name + "_prob", Ty, Count, Comdat, /* Init */ nullptr);
-}
-
 GlobalVariable* ControlFlowDiversity::emitPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat, Constant* Init) {
   auto* Ty = Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
   return emitArray(M, Name, Ty, Count, Comdat, Init);
@@ -531,8 +524,6 @@ static StructType* createDescTy(Module &M) {
   auto& C = M.getContext();
   Type* Fields[] {
     Type::getInt64PtrTy(C), // Variant pointers
-    Type::getInt32PtrTy(C), // Variant probabilities
-    Type::getInt64Ty(C),    // Function entry count (profiling information)
     Type::getInt32Ty(C)     // Number of variants
   };
   return StructType::create(C, Fields, "struct.cf_desc");
@@ -546,11 +537,9 @@ static Constant* createDescInit(Module& M, StructType* DescTy, ArrayRef<FInfo> F
   std::vector<Constant*> Elems(Funcs.size());
   for (const FInfo& I : Funcs) {
     auto* VariantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, I.VariantArray, Indices);
-    auto* ProbArrayPtr = ConstantExpr::getGetElementPtr(nullptr, emitProbArray(M, I), Indices);
-    auto* entryCount = ConstantInt::get(Type::getInt64Ty(C), 0 /* no profile data */);
     auto* VariantCount = ConstantInt::get(Type::getInt32Ty(C), I.Variants.size());
 
-    Constant* Fields[]{VariantArrayPtr, ProbArrayPtr, entryCount, VariantCount};
+    Constant* Fields[]{VariantArrayPtr, VariantCount};
     auto* Elem = ConstantStruct::get(DescTy, Fields);
     Elems[I.Index] = Elem;
   }

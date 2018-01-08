@@ -12,8 +12,6 @@ for (size_t _mi = 0; _mi < m_count; _mi++) {                \
 // Structures for registering control flow variants
 typedef struct {
   const uintptr_t* variants;  // Variant pointers
-  uint32_t* probs;            // Variant probabilities
-  const uint64_t entry_count; // Function entry count (profiling information)
   const uint32_t v_count;     // Number of variants
 } func_t;
 
