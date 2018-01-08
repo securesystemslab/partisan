@@ -199,7 +199,8 @@ void TracePC::UpdateObservedPCs() {
     if (ObservedPCs.insert(PC).second) {
       if (DoPrintNewPCs)
         PrintPC("\tNEW_PC: %p %F %L\n", "\tNEW_PC: %p\n", PC + 1);
-      HandleNewObservedPC(PC);
+      if (EF->__cf_activate_variants)
+        HandleNewObservedPC(PC);
     }
   };
 

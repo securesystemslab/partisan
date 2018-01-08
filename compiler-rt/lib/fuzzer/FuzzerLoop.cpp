@@ -152,7 +152,8 @@ Fuzzer::Fuzzer(UserCallback CB, InputCorpus &Corpus, MutationDispatcher &MD,
   TPC.SetUseValueProfile(Options.UseValueProfile);
   TPC.SetUseClangCoverage(Options.UseClangCoverage);
 
-  TPC.InitFunctionInfos();
+  if (EF->__cf_activate_variants)
+    TPC.InitFunctionInfos();
 
   if (Options.Verbosity)
     TPC.PrintModuleInfo();
@@ -655,9 +656,11 @@ void Fuzzer::MutateAndTestOne() {
       ReportNewCoverage(&II, {CurrentUnitData, CurrentUnitData + Size});
 
       // Re-execute with full sanitization
-      TPC.ActivateFullSanitization();
-      ExecuteCallback(CurrentUnitData, Size);
-      TPC.RestoreSanitizationLevels();
+      if (EF->__cf_activate_variants) {
+        TPC.ActivateFullSanitization();
+        ExecuteCallback(CurrentUnitData, Size);
+        TPC.RestoreSanitizationLevels();
+      }
 
       break;  // We will mutate this input more in the next rounds.
     }
