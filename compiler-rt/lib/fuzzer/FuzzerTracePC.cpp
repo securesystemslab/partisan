@@ -161,22 +161,18 @@ void TracePC::InitFunctionInfos() {
   std::sort(FuncsByPC.begin(), FuncsByPC.end());
 }
 
-// Defined in [ControlFlowRuntime.c]
-extern "C" void __cf_activate_variant(uintptr_t func, uint32_t variant_no);
-extern "C" void __cf_activate_variants(uint32_t variant_no);
-
 constexpr uint32_t V_FullSanitization = 0;
 constexpr uint32_t V_CoverageOnly = 1;
 constexpr uint32_t V_Unsanitized = 2;
 
 void TracePC::ActivateFullSanitization() {
-  __cf_activate_variants(V_FullSanitization);
+  EF->__cf_activate_variants(V_FullSanitization);
 }
 
 void TracePC::RestoreSanitizationLevels() {
   for (FInfo &I : FuncsByPC) {
     if (I.NumUnobservedPCs == 0) {
-      __cf_activate_variant(I.EntryBlockPC, V_CoverageOnly);
+      EF->__cf_activate_variant(I.EntryBlockPC, V_CoverageOnly);
     }
   }
 }
@@ -191,7 +187,7 @@ void TracePC::HandleNewObservedPC(uintptr_t PC) {
   I->NumUnobservedPCs--;
   if (I->NumUnobservedPCs == 0) {
     auto VariantNo = V_CoverageOnly;
-    __cf_activate_variant(I->EntryBlockPC, VariantNo);
+    EF->__cf_activate_variant(I->EntryBlockPC, VariantNo);
     Printf("\tCFD: Activated variant %u for ", VariantNo);
     PrintPC("%f %L\n", "%p\n", PC + 1);
   }
