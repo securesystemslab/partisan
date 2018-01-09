@@ -647,6 +647,11 @@ void Fuzzer::MutateAndTestOne() {
     Size = NewSize;
     II.NumExecutedMutations++;
 
+    // TODO(yln): reduce_inputs will not work with my plan, because new (shorter) inputs
+    // will never manage to get the same feature set (since we have less coverage
+    // instrumentation after switching)
+    // hacking idea: If input is shorter, always use variant with coverage instr.
+
     bool FoundUniqFeatures = false;
     bool NewCov = RunOne(CurrentUnitData, Size, /*MayDeleteFile=*/true, &II,
                          &FoundUniqFeatures);

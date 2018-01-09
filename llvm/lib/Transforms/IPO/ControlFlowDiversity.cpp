@@ -393,8 +393,6 @@ void ControlFlowDiversity::removeCoverage(Function* F) {
       }
     }
   }
-  // This leaves empty basic blocks (inserted by SanCov to track critical edges)
-  // which will be cleaned up in removeSanitizerChecks.
 }
 
 void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
@@ -493,6 +491,7 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
 }
 
 // TODO(yln): different array functions don't do much anymore. Inline!
+// TODO(yln): rename emit -> create
 static GlobalVariable* emitArray(Module &M, StringRef Name, Type *ElementTy, size_t Count, Comdat *Comdat, Constant *Init) {
   auto* Ty = ArrayType::get(ElementTy, Count);
   bool Constant = true;
@@ -506,6 +505,7 @@ static GlobalVariable* emitArray(Module &M, StringRef Name, Type *ElementTy, siz
   return GV;
 }
 
+// TODO(yln): rename emit -> create
 GlobalVariable* ControlFlowDiversity::emitPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat, Constant* Init) {
   auto* Ty = Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
   return emitArray(M, Name, Ty, Count, Comdat, Init);
@@ -548,6 +548,7 @@ static Constant* createDescInit(Module& M, StructType* DescTy, ArrayRef<FInfo> F
   return ConstantArray::get(Ty, Elems);
 }
 
+// TODO(yln): Use createSanitizerCtorAndInitFunctions
 static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* DescArray, MInfo& I) {
   auto& C = M.getContext();
   auto* Int32Ty = Type::getInt32Ty(C);
