@@ -310,8 +310,9 @@ void ControlFlowDiversity::createTrampoline(FInfo& I, GlobalVariable* RandPtrArr
   F->getParent()->getFunctionList().insert(F->getIterator(), NF);
 
   // Convert original function into first variant
+  auto Linkage = F->hasComdat() ? F->getLinkage() : GlobalValue::PrivateLinkage;
+  F->setLinkage(Linkage);
   setVariantName(F, I.Name, 0);
-  F->setLinkage(GlobalValue::PrivateLinkage);
   I.Variants.push_back(F);
 }
 
