@@ -310,8 +310,7 @@ void ControlFlowDiversity::createTrampoline(FInfo& I, GlobalVariable* RandPtrArr
   F->getParent()->getFunctionList().insert(F->getIterator(), NF);
 
   // Convert original function into first variant
-  auto Linkage = F->hasComdat() ? F->getLinkage() : GlobalValue::PrivateLinkage;
-  F->setLinkage(Linkage);
+  F->setLinkage(GlobalValue::PrivateLinkage);
   setVariantName(F, I.Name, 0);
   I.Variants.push_back(F);
 }
@@ -495,11 +494,12 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
 static GlobalVariable* emitArray(Module &M, StringRef Name, Type *ElementTy, size_t Count, Comdat *Comdat, Constant *Init) {
   auto* Ty = ArrayType::get(ElementTy, Count);
   bool Constant = true;
-  if (Init == nullptr) {
+  if (!Init) {
     Init = ConstantAggregateZero::get(Ty);
     Constant = false;
   }
-  auto* GV = new GlobalVariable(M, Ty, Constant, GlobalValue::PrivateLinkage, Init, "__cf_gen_" + Name);
+  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage;
+  auto* GV = new GlobalVariable(M, Ty, Constant, Linkage, Init, "__cf_gen_" + Name);
   GV->setExternallyInitialized(!Constant);
   GV->setComdat(Comdat);
   return GV;
