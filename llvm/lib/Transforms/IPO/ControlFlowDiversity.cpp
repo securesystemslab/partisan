@@ -548,40 +548,23 @@ static Constant* createDescInit(Module& M, StructType* DescTy, ArrayRef<FInfo> F
   return ConstantArray::get(Ty, Elems);
 }
 
-// TODO(yln): Use createSanitizerCtorAndInitFunctions
 static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* DescArray, MInfo& I) {
   auto& C = M.getContext();
   auto* Int32Ty = Type::getInt32Ty(C);
-  auto* Int64Ty = Type::getInt64Ty(C);
-  auto* VoidTy = Type::getVoidTy(C);
-
-  // This function is provided by the [ControlFlowRuntime.c]
-  // void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count)
-  auto* Hook = M.getOrInsertFunction(
-      "__cf_register",
-      VoidTy, // Return type
-      DescTy->getPointerTo(), Int64Ty->getPointerTo(), Int32Ty); // Arg types
-
-  // Module ctor
-  auto* CtorTy = FunctionType::get(VoidTy, /* isVarArg */ false);
-  auto* Ctor = Function::Create(CtorTy, GlobalValue::PrivateLinkage, "cf.module_ctor", &M);
-  auto* BB = BasicBlock::Create(C, "", Ctor);
-
-  // Arguments
   auto* Zero = ConstantInt::get(Int32Ty, 0);
   Constant* Indices[]{Zero, Zero};
+
+  // void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count) // in [ControlFlowRuntime.c]
+  Type* ArgTys[]{DescTy->getPointerTo(), (Type::getInt64PtrTy(C)), Int32Ty};
   Value* Args[] {
       ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices),
       ConstantExpr::getGetElementPtr(nullptr, I.RandPtrArray, Indices),
       ConstantInt::get(Int32Ty, I.Fns.size())
   };
 
-  // Body
-  IRBuilder<> B(BB);
-  B.CreateCall(Hook, Args);
-  B.CreateRetVoid();
-
-  // Add to list of ctors
+  Function* Ctor;
+  std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
+      M, "cf.module_ctor", "__cf_register", ArgTys, Args);
   appendToGlobalCtors(M, Ctor, /* Priority */ 0);
 }
 
