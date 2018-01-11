@@ -50,7 +50,8 @@ void __cf_activate_variant(uintptr_t func, uint32_t variant_no) {
       return;
     }
   FOR_FUNCTION_END
-  assert(0); // Function not found/randomized
+  // TODO(yln): happens if we skip randomizing a function for whatever reason
+//  assert(0 && "Function not found/randomized");
 }
 
 void __cf_activate_variants(uint32_t variant_no) {

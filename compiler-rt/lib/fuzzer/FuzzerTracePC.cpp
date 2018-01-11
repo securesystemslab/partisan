@@ -148,16 +148,12 @@ void TracePC::InitFunctionInfos() {
   for (size_t i = 0; i < NumPCTables; i++) {
     auto& M = ModulePCTable[i];
     for (auto* E = M.Start; E < M.Stop; E++) {
-      if (E->PCFlags & 1) {// PC for function entry block
+      if (E->PCFlags & 1) { // PC for function entry block
         FuncsByPC.emplace_back(FInfo{E->PC, 0});
-//        Printf("\nfunction[%p]: ", E->PC);
       }
-
       FuncsByPC.back().NumUnobservedPCs++;
-//      Printf(", %p", E->PC);
     }
   }
-//  Printf("\n\n");
   std::sort(FuncsByPC.begin(), FuncsByPC.end());
 }
 
@@ -181,7 +177,6 @@ void TracePC::HandleNewObservedPC(uintptr_t PC) {
   auto I = std::upper_bound(FuncsByPC.begin(), FuncsByPC.end(), FInfo{PC});
   assert(I != FuncsByPC.begin());
   --I;
-//  Printf("New PC: %p, found function: %p\n", PC, I->EntryBlockPC);
   assert(I != FuncsByPC.end());
   assert(I->NumUnobservedPCs > 0); // We require that this function is only called once per PC
   I->NumUnobservedPCs--;
