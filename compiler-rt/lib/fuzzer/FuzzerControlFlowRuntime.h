@@ -61,11 +61,10 @@ private:
   std::vector<Func> Funcs;
 
 public:
-  void registerFunc(const Func& F) { Funcs.push_back(F); }
+  bool isActive() const { return !Funcs.empty(); }
+  void registerFunc(Func& F);
   void completeFuncRegistration();
   void registerPC(uintptr_t EntryBlock, uintptr_t LastBlock, uint32_t NumPCs);
-
-  bool isActive() const { return !Funcs.empty(); }
   void handleNewObservedPC(uintptr_t PC);
   void activateFullSanitization();
   void restoreSanitizationLevels();
