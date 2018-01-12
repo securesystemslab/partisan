@@ -71,7 +71,7 @@ public:
   void restoreSanitizationLevels();
 };
 
-extern ControlFlowRuntime CFR;
+extern ControlFlowRuntime& CFR;
 
 } // namespace fuzzer
 

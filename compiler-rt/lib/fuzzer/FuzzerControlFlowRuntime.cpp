@@ -7,8 +7,6 @@
 
 namespace fuzzer {
 
-ControlFlowRuntime CFR;
-
 void ControlFlowRuntime::completeFuncRegistration() {
   assert(isActive());
   std::sort(Funcs.begin(), Funcs.end());
@@ -54,6 +52,15 @@ void ControlFlowRuntime::restoreSanitizationLevels() {
   }
 }
 
+// Forces initialization so we can access runtime instance from __cf_register,
+// which runs very early, i.e., before C++ initializers.
+static ControlFlowRuntime& getCFR() {
+  static ControlFlowRuntime Instance;
+  return Instance;
+}
+
+ControlFlowRuntime& CFR = getCFR();
+
 } // namespace fuzzer
 
 extern "C" {
@@ -64,7 +71,7 @@ void __cf_register(const func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count) 
   for (uint32_t i = 0; i < f_count; i++) {
     const func_t& f = funcs[i];
     fuzzer::ControlFlowRuntime::Func F(f.variants, &rand_ptrs[i], f.v_count);
-    fuzzer::CFR.registerFunc(F);
+    fuzzer::getCFR().registerFunc(F);
   }
 }
 
