@@ -1,5 +1,6 @@
 set(LIBFUZZER_SOURCES
   FuzzerClangCounters.cpp
+  FuzzerControlFlowRuntime.cpp
   FuzzerCrossOver.cpp
   FuzzerDriver.cpp
   FuzzerExtFunctionsDlsym.cpp
