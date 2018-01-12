@@ -21,18 +21,36 @@ namespace fuzzer {
 class ControlFlowRuntime {
 public:
   class Func {
-    const uintptr_t* const Variants;
-    uintptr_t* const RandLoc;
-    const uint32_t VariantCount;
-    uint32_t NumUnobservedPCs;
+    const uintptr_t* Variants;
+    uintptr_t* RandLoc;
+    uint32_t NumVariants;
+    uint32_t NumUnobservedPC;
+    uintptr_t LastAddress;
 
   public:
-    Func(const uintptr_t *Variants, uintptr_t *RandLoc, uint32_t VariantCount)
-        : Variants(Variants), RandLoc(RandLoc), VariantCount(VariantCount),
-          NumUnobservedPCs(0) {}
+    static Func makeKey(uintptr_t Address) {
+      static uintptr_t Variants[1];
+      Variants[0] = Address;
+      return {Variants, nullptr, 0};
+    }
 
-    bool isFullyExplored() const { return NumUnobservedPCs == 0; }
-    void ActivateVariant(uint32_t V) { *RandLoc = Variants[V]; }
+    Func(const uintptr_t *Variants, uintptr_t *RandLoc, uint32_t NumVariants)
+        : Variants(Variants), RandLoc(RandLoc), NumVariants(NumVariants) {}
+
+    bool operator<(const Func& F) const { return address() < F.address(); }
+    bool operator==(const Func& F) const { return address() == F.address(); }
+
+    uintptr_t address() const { return Variants[0]; }
+    uintptr_t lastAddress() const { return LastAddress; }
+
+    void setPCData(uintptr_t LastAddr, uint32_t NumPCs) {
+      LastAddress = LastAddr;
+      NumUnobservedPC = NumPCs;
+    }
+
+    bool isFullyExplored() const { return NumUnobservedPC == 0; }
+    bool handleNewObservedPC() { return --NumUnobservedPC == 0; }
+    void activateVariant(uint32_t V) { *RandLoc = Variants[V]; }
   };
 
 private:
@@ -42,12 +60,17 @@ private:
 
   std::vector<Func> Funcs;
 
-public:
-  bool isActive() const { return !Funcs.empty(); }
-  void Register(const Func& F) { Funcs.push_back(F); }
+  Func* findFunc(uintptr_t Addr);
 
-  void ActivateFullSanitization();
-  void RestoreSanitizationLevels();
+public:
+  void registerFunc(const Func& F) { Funcs.push_back(F); }
+  void completeFuncRegistration();
+  void registerPC(uintptr_t EntryBlock, uintptr_t LastBlock, uint32_t NumPCs);
+
+  bool isActive() const { return !Funcs.empty(); }
+  void handleNewObservedPC(uintptr_t PC);
+  void activateFullSanitization();
+  void restoreSanitizationLevels();
 };
 
 extern ControlFlowRuntime CFR;
