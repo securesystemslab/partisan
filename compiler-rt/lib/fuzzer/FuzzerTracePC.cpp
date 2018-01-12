@@ -153,16 +153,18 @@ void TracePC::InitCFRuntime() {
   for (size_t i = 0; i < NumPCTables; i++) {
     auto& M = ModulePCTable[i];
     assert(M.Start < M.Stop);
+    auto* I = M.Stop - 1;
     uint32_t NumPCs = 0;
-    auto* I = M.Stop;
+    uintptr_t LastBlock;
     do {
-      --I;
+      if (NumPCs == 0)
+        LastBlock = I->PC;
       NumPCs++;
       if (I->PCFlags & 1) { // PC for function entry block
-        CFR.registerPC(I->PC, 0, NumPCs);
+        CFR.registerPC(I->PC, LastBlock, NumPCs);
         NumPCs = 0;
       }
-    } while(I <= M.Start);
+    } while(--I <= M.Start);
     assert(NumPCs == 0);
   }
 }

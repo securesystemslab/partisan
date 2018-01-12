@@ -13,6 +13,7 @@ void ControlFlowRuntime::completeFuncRegistration() {
   assert(isActive());
   std::sort(Funcs.begin(), Funcs.end());
   assert(std::unique(Funcs.begin(), Funcs.end()) == Funcs.end());
+  activateFullSanitization();
 }
 
 void ControlFlowRuntime::registerPC(uintptr_t EntryBlock, uintptr_t LastBlock, uint32_t NumPCs) {
