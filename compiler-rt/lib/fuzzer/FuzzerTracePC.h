@@ -102,9 +102,7 @@ class TracePC {
   void UpdateFeatureSet(size_t CurrentElementIdx, size_t CurrentElementSize);
   void PrintFeatureSet();
 
-  void InitFunctionInfos();
-  void ActivateFullSanitization();
-  void RestoreSanitizationLevels();
+  void InitCFRuntime();
 
   void PrintModuleInfo();
 
@@ -162,18 +160,6 @@ private:
   struct { const PCTableEntry *Start, *Stop; } ModulePCTable[4096];
   size_t NumPCTables;
   size_t NumPCsInPCTables;
-
-  struct FInfo {
-    uintptr_t EntryBlockPC; // Function address
-    uint32_t NumUnobservedPCs;
-
-    bool operator<(const FInfo &FI) const {
-      return EntryBlockPC < FI.EntryBlockPC;
-    }
-  };
-  Vector<FInfo> FuncsByPC;
-
-  void HandleNewObservedPC(uintptr_t PC);
 
   uint8_t *Counters() const;
   uintptr_t *PCs() const;

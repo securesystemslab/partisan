@@ -9,6 +9,7 @@
 // Fuzzer's main loop.
 //===----------------------------------------------------------------------===//
 
+#include "FuzzerControlFlowRuntime.h"
 #include "FuzzerCorpus.h"
 #include "FuzzerIO.h"
 #include "FuzzerInternal.h"
@@ -152,8 +153,7 @@ Fuzzer::Fuzzer(UserCallback CB, InputCorpus &Corpus, MutationDispatcher &MD,
   TPC.SetUseValueProfile(Options.UseValueProfile);
   TPC.SetUseClangCoverage(Options.UseClangCoverage);
 
-  if (EF->__cf_activate_variants)
-    TPC.InitFunctionInfos();
+  TPC.InitCFRuntime();
 
   if (Options.Verbosity)
     TPC.PrintModuleInfo();
@@ -661,10 +661,10 @@ void Fuzzer::MutateAndTestOne() {
       ReportNewCoverage(&II, {CurrentUnitData, CurrentUnitData + Size});
 
       // Re-execute with full sanitization
-      if (EF->__cf_activate_variants) {
-        TPC.ActivateFullSanitization();
+      if (CFR.isActive()) {
+        CFR.activateFullSanitization();
         ExecuteCallback(CurrentUnitData, Size);
-        TPC.RestoreSanitizationLevels();
+        CFR.restoreSanitizationLevels();
       }
 
       break;  // We will mutate this input more in the next rounds.

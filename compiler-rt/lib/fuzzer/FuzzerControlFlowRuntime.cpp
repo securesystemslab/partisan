@@ -10,11 +10,13 @@ namespace fuzzer {
 ControlFlowRuntime CFR;
 
 void ControlFlowRuntime::completeFuncRegistration() {
+  assert(isActive());
   std::sort(Funcs.begin(), Funcs.end());
   assert(std::unique(Funcs.begin(), Funcs.end()) == Funcs.end());
 }
 
 void ControlFlowRuntime::registerPC(uintptr_t EntryBlock, uintptr_t LastBlock, uint32_t NumPCs) {
+  assert(isActive());
   auto Key = Func::makeKey(EntryBlock);
   auto I = std::lower_bound(Funcs.begin(), Funcs.end(), Key);
   if (I != Funcs.end() && I->address() == EntryBlock)
@@ -22,6 +24,7 @@ void ControlFlowRuntime::registerPC(uintptr_t EntryBlock, uintptr_t LastBlock, u
 }
 
 void ControlFlowRuntime::handleNewObservedPC(uintptr_t PC) {
+  assert(isActive());
   auto Key = Func::makeKey(PC);
   auto I = std::upper_bound(Funcs.begin(), Funcs.end(), Key);
   if (I != Funcs.begin() && (--I)->lastAddress() >= PC) {

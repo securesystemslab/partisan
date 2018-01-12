@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "FuzzerTracePC.h"
+#include "FuzzerControlFlowRuntime.h"
 #include "FuzzerCorpus.h"
 #include "FuzzerDefs.h"
 #include "FuzzerDictionary.h"
@@ -144,47 +145,25 @@ void TracePC::HandleCallerCallee(uintptr_t Caller, uintptr_t Callee) {
   ValueProfileMap.AddValueModPrime(Idx);
 }
 
-void TracePC::InitFunctionInfos() {
+void TracePC::InitCFRuntime() {
+  if (!CFR.isActive())
+    return;
+  CFR.completeFuncRegistration();
+
   for (size_t i = 0; i < NumPCTables; i++) {
     auto& M = ModulePCTable[i];
-    for (auto* E = M.Start; E < M.Stop; E++) {
-      if (E->PCFlags & 1) { // PC for function entry block
-        FuncsByPC.emplace_back(FInfo{E->PC, 0});
+    assert(M.Start < M.Stop);
+    uint32_t NumPCs = 0;
+    auto* I = M.Stop;
+    do {
+      --I;
+      NumPCs++;
+      if (I->PCFlags & 1) { // PC for function entry block
+        CFR.registerPC(I->PC, 0, NumPCs);
+        NumPCs = 0;
       }
-      FuncsByPC.back().NumUnobservedPCs++;
-    }
-  }
-  std::sort(FuncsByPC.begin(), FuncsByPC.end());
-}
-
-constexpr uint32_t V_FullSanitization = 0;
-constexpr uint32_t V_CoverageOnly = 1;
-constexpr uint32_t V_Unsanitized = 2;
-
-void TracePC::ActivateFullSanitization() {
-  EF->__cf_activate_variants(V_FullSanitization);
-}
-
-void TracePC::RestoreSanitizationLevels() {
-  for (FInfo &I : FuncsByPC) {
-    if (I.NumUnobservedPCs == 0) {
-      EF->__cf_activate_variant(I.EntryBlockPC, V_CoverageOnly);
-    }
-  }
-}
-
-void TracePC::HandleNewObservedPC(uintptr_t PC) {
-  auto I = std::upper_bound(FuncsByPC.begin(), FuncsByPC.end(), FInfo{PC});
-  assert(I != FuncsByPC.begin());
-  --I;
-  assert(I != FuncsByPC.end());
-  assert(I->NumUnobservedPCs > 0); // We require that this function is only called once per PC
-  I->NumUnobservedPCs--;
-  if (I->NumUnobservedPCs == 0) {
-    auto VariantNo = V_CoverageOnly;
-    EF->__cf_activate_variant(I->EntryBlockPC, VariantNo);
-    Printf("\tCFD: Activated variant %u for ", VariantNo);
-    PrintPC("%f %L\n", "%p\n", PC + 1);
+    } while(I <= M.Start);
+    assert(NumPCs == 0);
   }
 }
 
@@ -194,8 +173,8 @@ void TracePC::UpdateObservedPCs() {
     if (ObservedPCs.insert(PC).second) {
       if (DoPrintNewPCs)
         PrintPC("\tNEW_PC: %p %F %L\n", "\tNEW_PC: %p\n", PC + 1);
-      if (EF->__cf_activate_variants)
-        HandleNewObservedPC(PC);
+      if (CFR.isActive())
+        CFR.handleNewObservedPC(PC);
     }
   };
 
