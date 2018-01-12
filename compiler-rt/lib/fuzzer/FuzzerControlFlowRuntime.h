@@ -60,8 +60,6 @@ private:
 
   std::vector<Func> Funcs;
 
-  Func* findFunc(uintptr_t Addr);
-
 public:
   void registerFunc(const Func& F) { Funcs.push_back(F); }
   void completeFuncRegistration();
