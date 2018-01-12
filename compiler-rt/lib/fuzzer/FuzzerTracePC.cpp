@@ -164,7 +164,7 @@ void TracePC::InitCFRuntime() {
         CFR.registerPC(I->PC, LastBlock, NumPCs);
         NumPCs = 0;
       }
-    } while(--I <= M.Start);
+    } while(--I >= M.Start);
     assert(NumPCs == 0);
   }
 }
