@@ -554,7 +554,7 @@ static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* Desc
   auto* Zero = ConstantInt::get(Int32Ty, 0);
   Constant* Indices[]{Zero, Zero};
 
-  // void __cf_register(func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count) // in [ControlFlowRuntime.c]
+  // void __cf_register(const func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count)
   Type* ArgTys[]{DescTy->getPointerTo(), (Type::getInt64PtrTy(C)), Int32Ty};
   Value* Args[] {
       ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices),

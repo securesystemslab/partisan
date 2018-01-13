@@ -24,8 +24,8 @@ public:
     const uintptr_t* Variants;
     uintptr_t* RandLoc;
     uint32_t NumVariants;
-    uint32_t NumUnobservedPC;
-    uintptr_t LastAddress;
+    uint32_t NumUnobservedPC{};
+    uintptr_t LastAddress{};
 
   public:
     static Func makeKey(uintptr_t Address) {
