@@ -564,7 +564,7 @@ static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* Desc
 
   Function* Ctor;
   std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
-      M, "cf.module_ctor", "__cf_register", ArgTys, Args);
+      M, "cf.module_ctor", "__cf_register", ArgTys, Args, "", /* WeakLinkage */ true);
   appendToGlobalCtors(M, Ctor, /* Priority */ 0);
 }
 

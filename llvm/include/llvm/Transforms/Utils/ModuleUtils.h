@@ -47,7 +47,8 @@ void appendToGlobalDtors(Module &M, Function *F, int Priority,
 Function *checkSanitizerInterfaceFunction(Constant *FuncOrBitcast);
 
 Function *declareSanitizerInitFunction(Module &M, StringRef InitName,
-                                       ArrayRef<Type *> InitArgTypes);
+                                       ArrayRef<Type *> InitArgTypes,
+                                       bool WeakLinkage = false);
 
 /// \brief Creates sanitizer constructor function, and calls sanitizer's init
 /// function from it.
@@ -56,7 +57,8 @@ Function *declareSanitizerInitFunction(Module &M, StringRef InitName,
 std::pair<Function *, Function *> createSanitizerCtorAndInitFunctions(
     Module &M, StringRef CtorName, StringRef InitName,
     ArrayRef<Type *> InitArgTypes, ArrayRef<Value *> InitArgs,
-    StringRef VersionCheckName = StringRef());
+    StringRef VersionCheckName = StringRef(),
+    bool UseWeakLinkageForInitFunction = false);
 
 /// Rename all the anon globals in the module using a hash computed from
 /// the list of public globals in the module.
