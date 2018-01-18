@@ -168,6 +168,14 @@ void InitializeCoverage(bool enabled, const char *dir) {
 } // namespace __sanitizer
 
 extern "C" {
+// TODO(yln): this is a hack to trick tools like autoconf, when compiling with
+// with fuzzer-no-link
+#include <stdlib.h>
+SANITIZER_INTERFACE_WEAK_DEF(void, __cf_register, void) {
+  Printf("Code instrumented for CFD, but runtime not linked!\n");
+  exit(0);
+}
+
 SANITIZER_INTERFACE_ATTRIBUTE void __sanitizer_dump_coverage(  // NOLINT
     const uptr* pcs, uptr len) {
   return __sancov::SanitizerDumpCoverage(pcs, len);
