@@ -372,9 +372,7 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
 }
 
 static bool isCoverageInst(const Instruction& I) {
-  return I.use_empty()
-      && !isa<TerminatorInst>(I)
-      && containsOperand(&I, [](const Value* V) {
+  return I.use_empty() && containsOperand(&I, [](const Value* V) {
     return V->getName().startswith(SanCovVarPrefix)
         || V->getName().startswith(SanCovFnPrefix);
   });
@@ -386,7 +384,14 @@ void ControlFlowDiversity::removeCoverage(Function* F) {
 
     if (isCoverageInst(I)) {
       SmallVector<Value*, 4> Operands(I.operands());
-      I.eraseFromParent();
+      if (auto* B = dyn_cast<BranchInst>(&I)) {
+        assert(B->isConditional());
+        assert(isCoverageInst(*B->getSuccessor(0)->begin()));
+        // Hard-code branch target, will be cleaned up by SimplifyCFG pass
+        B->setCondition(ConstantInt::getFalse(F->getContext()));
+      } else {
+        I.eraseFromParent();
+      }
       for (auto* Op : Operands) {
         RecursivelyDeleteTriviallyDeadInstructions(Op);
       }
