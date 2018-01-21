@@ -96,7 +96,7 @@ private:
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerChecks(Function* F);
 
-  GlobalVariable* emitPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat = nullptr, Constant* Init = nullptr);
+  GlobalVariable* createPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat = nullptr, Constant* Init = nullptr);
   Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
 
   void emitRuntimeMetadata(Module& M, MInfo& I);
@@ -136,7 +136,7 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   }
 
   // Create randomized ptr array
-  mi.RandPtrArray = emitPtrArray(M, "rand_ptrs", mi.Fns.size());
+  mi.RandPtrArray = createPtrArray(M, "rand_ptrs", mi.Fns.size());
 
   // Create trampoline, make first variant, randomize call sites
   for (FInfo& i : mi.Fns) {
@@ -163,7 +163,7 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
   for (FInfo& i : mi.Fns) {
     auto* Init = createFnPtrInit(M, i.Variants);
     auto* Comdat = i.Original->getComdat();
-    i.VariantArray = emitPtrArray(M, i.Name, i.Variants.size(), Comdat, Init);
+    i.VariantArray = createPtrArray(M, i.Name, i.Variants.size(), Comdat, Init);
   }
 
   // Emit metadata for runtime randomization
@@ -507,7 +507,7 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
 }
 
 void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
-  auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
+//  auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
   removeSanitizerAttributes(F);
   // removeSanitizerInstructions(F, TTI); // TODO(yln): Support UBSan
   // This is here for sanitizers (like UBSan) that insert instrumentation, before our CFD pass.
@@ -515,9 +515,7 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
   // has some weird interaction when simplifying CFGs that had critical edges added by SanCov.
 }
 
-// TODO(yln): different array functions don't do much anymore. Inline!
-// TODO(yln): rename emit -> create
-static GlobalVariable* emitArray(Module &M, StringRef Name, Type *ElementTy, size_t Count, Comdat *Comdat, Constant *Init) {
+static GlobalVariable* createArray(Module& M, StringRef Name, Type* ElementTy, size_t Count, Comdat* Comdat, Constant* Init) {
   auto* Ty = ArrayType::get(ElementTy, Count);
   bool Constant = true;
   if (!Init) {
@@ -531,10 +529,9 @@ static GlobalVariable* emitArray(Module &M, StringRef Name, Type *ElementTy, siz
   return GV;
 }
 
-// TODO(yln): rename emit -> create
-GlobalVariable* ControlFlowDiversity::emitPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat, Constant* Init) {
+GlobalVariable* ControlFlowDiversity::createPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat, Constant* Init) {
   auto* Ty = Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
-  return emitArray(M, Name, Ty, Count, Comdat, Init);
+  return createArray(M, Name, Ty, Count, Comdat, Init);
 }
 
 Constant* ControlFlowDiversity::createFnPtrInit(Module& M, ArrayRef<Function*> variants) {
@@ -597,7 +594,7 @@ static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* Desc
 void ControlFlowDiversity::emitRuntimeMetadata(Module& M, MInfo& I) {
   auto* Ty = createDescTy(M);
   auto* Init = createDescInit(M, Ty, I.Fns);
-  auto* Array = emitArray(M, "descs", Ty, I.Fns.size(), /* Comdat */ nullptr, Init);
+  auto* Array = createArray(M, "descs", Ty, I.Fns.size(), /* Comdat */ nullptr, Init);
   createModuleCtor(M, Ty, Array, I);
 }
 
