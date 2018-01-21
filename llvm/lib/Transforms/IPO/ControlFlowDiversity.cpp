@@ -354,12 +354,33 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
   }
 }
 
+static Function* cloneFunction(Function* F) {
+  ValueToValueMapTy VMap;
+  auto* NF = CloneFunction(F, VMap);
+
+  // llvm::CloneFunction's contract says that 'it is only valid to clone a
+  // function if a block address within that function is never referenced
+  // outside of the function.'  Unfortunately, this is the case with the
+  // SanCov PC-tables. SanCov introduces new basic blocks to instrument critical
+  // edges. After we remove the SanCov instrumentation, those become empty and
+  // cause problems in StackColoring::calculateLocalLiveness: for some reason no
+  // liveness mapping was computed for them. Here we delete the only use of such
+  // empty critical edge basic blocks to allow the SimplifyCFG pass to clean
+  // them up.
+  for (auto E : VMap) {
+    if (auto* BA = dyn_cast<BlockAddress>(E.second)) {
+      if (BA->use_empty())
+        BA->destroyConstant();
+    }
+  }
+  return NF;
+}
+
 void ControlFlowDiversity::createVariant(FInfo& I) {
   auto VariantNo = I.Variants.size();
 
   // Clone function
-  ValueToValueMapTy VMap;
-  auto* NF = CloneFunction(I.Original, VMap);
+  auto* NF = cloneFunction(I.Original);
   NF->setComdat(I.Original->getComdat());
   setVariantName(NF, I.Name, VariantNo);
 
