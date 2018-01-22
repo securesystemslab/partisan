@@ -354,6 +354,20 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
   }
 }
 
+static Instruction* getInstUser(Value* V) {
+  while (!isa<Instruction>(V) && V->hasOneUse()) {
+    V = *V->user_begin();
+  }
+  return dyn_cast<Instruction>(V);
+}
+
+static bool isCoverageInst(const Instruction& I) {
+  return I.use_empty() && containsOperand(&I, [](const Value* V) {
+    return V->getName().startswith(SanCovVarPrefix)
+        || V->getName().startswith(SanCovFnPrefix);
+  });
+}
+
 static Function* cloneFunction(Function* F) {
   ValueToValueMapTy VMap;
   auto* NF = CloneFunction(F, VMap);
@@ -366,9 +380,14 @@ static Function* cloneFunction(Function* F) {
   // cause problems in StackColoring::calculateLocalLiveness: for some reason no
   // liveness mapping was computed for them. Here we delete the only use of such
   // empty critical edge basic blocks to allow the SimplifyCFG pass to clean
-  // them up.
+  // them up. The code below also switches back the BlockAddresses of the
+  // SanCov instrumentation to reference the canonical variant 0, example:
+  // call void @__sanitizer_cov_trace_const_cmp8(i64 3, i64 %2, i64 ptrtoint (i8* blockaddress(@foo_1 -> 0, %entry) to i64))
   for (auto E : VMap) {
     if (auto* BA = dyn_cast<BlockAddress>(E.second)) {
+      auto* I = getInstUser(BA);
+      if (I && isCoverageInst(*I))
+        BA->use_begin()->set(const_cast<Value*>(E.first));
       if (BA->use_empty())
         BA->destroyConstant();
     }
@@ -390,13 +409,6 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   F->getParent()->getFunctionList().insertAfter(F->getIterator(), NF);
 
   I.Variants.push_back(NF);
-}
-
-static bool isCoverageInst(const Instruction& I) {
-  return I.use_empty() && containsOperand(&I, [](const Value* V) {
-    return V->getName().startswith(SanCovVarPrefix)
-        || V->getName().startswith(SanCovFnPrefix);
-  });
 }
 
 void ControlFlowDiversity::removeCoverage(Function* F) {
