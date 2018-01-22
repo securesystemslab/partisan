@@ -676,7 +676,7 @@ void SanitizerCoverageModule::InjectTraceForSwitch(
           ConstantArray::get(ArrayOfInt64Ty, Initializers),
           "__sancov_gen_cov_switch_values");
       IRB.CreateCall(SanCovTraceSwitchFunction,
-                     {Cond, IRB.CreatePointerCast(GV, Int64PtrTy)});
+                     {Cond, IRB.CreatePointerCast(GV, Int64PtrTy), createPCArg(IRB)});
     }
   }
 }
