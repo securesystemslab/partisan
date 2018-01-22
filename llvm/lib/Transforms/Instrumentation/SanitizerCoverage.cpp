@@ -216,8 +216,12 @@ private:
   CreateSecStartEnd(Module &M, const char *Section, Type *Ty);
 
   Value* createPCArg(IRBuilder<>& IRB) {
-    auto* BA = BlockAddress::get(IRB.GetInsertBlock());
-    return IRB.CreatePtrToInt(BA, IntptrTy);
+    auto* BB = IRB.GetInsertBlock();
+    auto* F = BB->getParent();
+    // Can't take the address of the entry block
+    auto *PC = (BB == &F->getEntryBlock()) ? static_cast<Value *>(F)
+                                           : BlockAddress::get(BB);
+    return IRB.CreatePtrToInt(PC, IntptrTy);
   }
 
   void SetNoSanitizeMetadata(Instruction *I) {
