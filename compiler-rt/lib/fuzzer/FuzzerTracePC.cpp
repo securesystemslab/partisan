@@ -404,6 +404,7 @@ extern "C" {
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 void __sanitizer_cov_trace_pc_guard(uint32_t *Guard) {
+  assert(false && "unreachable");
   uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   uint32_t Idx = *Guard;
   __sancov_trace_pc_pcs[Idx] = PC;
@@ -415,6 +416,7 @@ void __sanitizer_cov_trace_pc_guard(uint32_t *Guard) {
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 void __sanitizer_cov_trace_pc() {
+  assert(false && "unreachable");
   uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   uintptr_t Idx = PC & (((uintptr_t)1 << fuzzer::TracePC::kTracePcBits) - 1);
   __sancov_trace_pc_pcs[Idx] = PC;
@@ -439,16 +441,16 @@ void __sanitizer_cov_pcs_init(const uintptr_t *pcs_beg,
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
-void __sanitizer_cov_trace_pc_indir(uintptr_t Callee) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_pc_indir(uintptr_t Callee, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCallerCallee(PC, Callee);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_cmp8(uint64_t Arg1, uint64_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_cmp8(uint64_t Arg1, uint64_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
@@ -458,70 +460,70 @@ ATTRIBUTE_TARGET_POPCNT
 // Now the __sanitizer_cov_trace_const_cmp[1248] callbacks just mimic
 // the behaviour of __sanitizer_cov_trace_cmp[1248] ones. This, however,
 // should be changed later to make full use of instrumentation.
-void __sanitizer_cov_trace_const_cmp8(uint64_t Arg1, uint64_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_const_cmp8(uint64_t Arg1, uint64_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_cmp4(uint32_t Arg1, uint32_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_cmp4(uint32_t Arg1, uint32_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_const_cmp4(uint32_t Arg1, uint32_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_const_cmp4(uint32_t Arg1, uint32_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_cmp2(uint16_t Arg1, uint16_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_cmp2(uint16_t Arg1, uint16_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_const_cmp2(uint16_t Arg1, uint16_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_const_cmp2(uint16_t Arg1, uint16_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_cmp1(uint8_t Arg1, uint8_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_cmp1(uint8_t Arg1, uint8_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_const_cmp1(uint8_t Arg1, uint8_t Arg2) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_const_cmp1(uint8_t Arg1, uint8_t Arg2, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Arg1, Arg2);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_switch(uint64_t Val, uint64_t *Cases) {
+void __sanitizer_cov_trace_switch(uint64_t Val, uint64_t *Cases, uintptr_t PC) {
   uint64_t N = Cases[0];
   uint64_t ValSizeInBits = Cases[1];
   uint64_t *Vals = Cases + 2;
   // Skip the most common and the most boring case.
   if (Vals[N - 1]  < 256 && Val < 256)
     return;
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   size_t i;
   uint64_t Token = 0;
   for (i = 0; i < N; i++) {
@@ -541,24 +543,24 @@ void __sanitizer_cov_trace_switch(uint64_t Val, uint64_t *Cases) {
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_div4(uint32_t Val) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_div4(uint32_t Val, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Val, (uint32_t)0);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_div8(uint64_t Val) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_div8(uint64_t Val, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Val, (uint64_t)0);
 }
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
 ATTRIBUTE_TARGET_POPCNT
-void __sanitizer_cov_trace_gep(uintptr_t Idx) {
-  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+void __sanitizer_cov_trace_gep(uintptr_t Idx, uintptr_t PC) {
+//  uintptr_t PC = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
   fuzzer::TPC.HandleCmp(PC, Idx, (uintptr_t)0);
 }
 
