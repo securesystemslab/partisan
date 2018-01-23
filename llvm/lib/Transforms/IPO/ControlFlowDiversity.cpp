@@ -315,11 +315,26 @@ void ControlFlowDiversity::createTrampoline(FInfo& I, GlobalVariable* RandPtrArr
   I.Variants.push_back(F);
 }
 
-static bool isSanCovUser(const User* U, unsigned Level = 5) {
+static bool isCoverageVarInit(const User* U, unsigned Level = 5) {
   if (U->getName().startswith(SanCovVarPrefix))
     return true;
-  auto Recurse = [Level](const User* U) { return isSanCovUser(U, Level - 1); };
+  auto Recurse = [Level](const User* U) { return isCoverageVarInit(U, Level - 1); };
   return Level > 0 && std::any_of(U->user_begin(), U->user_end(), Recurse);
+}
+
+static bool isCoverageInst(const Instruction* I) {
+  return I->use_empty() && containsOperand(I, [](const Value* V) {
+    return V->getName().startswith(SanCovVarPrefix)
+        || V->getName().startswith(SanCovFnPrefix);
+  });
+}
+
+static bool isCoverageInstOperand(const Value* V) {
+  while (!isa<Instruction>(V) && V->hasOneUse()) {
+    V = *V->user_begin();
+  }
+  auto* I = dyn_cast<Instruction>(V);
+  return I && isCoverageInst(I);
 }
 
 // See [Value::replaceUsesExceptBlockAddr] for algorithm template
@@ -341,7 +356,8 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
     }
     if (auto* C = dyn_cast<Constant>(U.getUser())) {
       if (!isa<GlobalValue>(C)) {
-        if (!isa<BlockAddress>(C) && !isSanCovUser(C))
+        if (!isa<BlockAddress>(C) &&
+            !isCoverageVarInit(C) && !isCoverageInstOperand(C))
           Constants.insert(C);
         continue;
       }
@@ -352,20 +368,6 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
   for (auto* C : Constants) {
     C->handleOperandChange(F, I.Trampoline);
   }
-}
-
-static Instruction* getInstUser(Value* V) {
-  while (!isa<Instruction>(V) && V->hasOneUse()) {
-    V = *V->user_begin();
-  }
-  return dyn_cast<Instruction>(V);
-}
-
-static bool isCoverageInst(const Instruction& I) {
-  return I.use_empty() && containsOperand(&I, [](const Value* V) {
-    return V->getName().startswith(SanCovVarPrefix)
-        || V->getName().startswith(SanCovFnPrefix);
-  });
 }
 
 static Function* cloneFunction(Function* F) {
@@ -385,8 +387,7 @@ static Function* cloneFunction(Function* F) {
   // call void @__sanitizer_cov_trace_const_cmp8(i64 3, i64 %2, i64 ptrtoint (i8* blockaddress(@foo_1 -> 0, %entry) to i64))
   for (auto E : VMap) {
     if (auto* BA = dyn_cast<BlockAddress>(E.second)) {
-      auto* I = getInstUser(BA);
-      if (I && isCoverageInst(*I))
+      if (isCoverageInstOperand(BA))
         BA->use_begin()->set(const_cast<Value*>(E.first));
       if (BA->use_empty())
         BA->destroyConstant();
@@ -415,11 +416,11 @@ void ControlFlowDiversity::removeCoverage(Function* F) {
   for (auto BI = inst_begin(F), E = inst_end(F); BI != E;) {
     auto& I = *BI++;  // Advance iterator since we might delete this instruction
 
-    if (isCoverageInst(I)) {
+    if (isCoverageInst(&I)) {
       SmallVector<Value*, 4> Operands(I.operands());
       if (auto* B = dyn_cast<BranchInst>(&I)) {
         assert(B->isConditional());
-        assert(isCoverageInst(*B->getSuccessor(0)->begin()));
+        assert(isCoverageInst(&*B->getSuccessor(0)->begin()));
         // Hard-code branch target, will be cleaned up by SimplifyCFG pass
         B->setCondition(ConstantInt::getFalse(F->getContext()));
       } else {
