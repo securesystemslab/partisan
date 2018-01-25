@@ -24,8 +24,9 @@ public:
     const uintptr_t* Variants;
     uintptr_t* RandLoc;
     uint32_t NumVariants;
-    uint32_t NumUnobservedPC{};
     uintptr_t LastAddress{};
+    uint32_t NumPCs{};
+    uint32_t NumUnobservedPCs{};
 
   public:
     static Func makeKey(uintptr_t Address) {
@@ -45,11 +46,13 @@ public:
 
     void setPCData(uintptr_t LastAddr, uint32_t NumPCs) {
       LastAddress = LastAddr;
-      NumUnobservedPC = NumPCs;
+      this->NumPCs = NumPCs;
+      NumUnobservedPCs = NumPCs;
     }
 
-    bool isFullyExplored() const { return NumUnobservedPC == 0; }
-    bool handleNewObservedPC() { return --NumUnobservedPC == 0; }
+    bool isUnexplored() const { return NumPCs == NumUnobservedPCs; }
+    bool isFullyExplored() const { return NumUnobservedPCs == 0; }
+    bool handleNewObservedPC() { return --NumUnobservedPCs == 0; }
     void activateVariant(uint32_t V) { *RandLoc = Variants[V]; }
   };
 
@@ -68,6 +71,7 @@ public:
   void handleNewObservedPC(uintptr_t PC);
   void activateFullSanitization();
   void restoreSanitizationLevels();
+  void printStats() const;
 };
 
 extern ControlFlowRuntime& CFR;

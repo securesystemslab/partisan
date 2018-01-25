@@ -57,6 +57,19 @@ void ControlFlowRuntime::restoreSanitizationLevels() {
   }
 }
 
+void ControlFlowRuntime::printStats() const {
+  size_t Total = Funcs.size();
+  size_t Unexplored = 0, PartiallyExplored = 0, FullyExplored = 0;
+  for (auto& F : Funcs) {
+    if (F.isUnexplored())         Unexplored++;
+    else if (F.isFullyExplored()) FullyExplored++;
+    else                          PartiallyExplored++;
+  }
+  assert (Unexplored + PartiallyExplored + FullyExplored == Total);
+  Printf("CFD: %zd/%zd/%zd/%zd (un-/partially-/fully-explored/total) functions\n",
+      Unexplored, PartiallyExplored, FullyExplored, Total);
+}
+
 // Forces initialization so we can access runtime instance from __cf_register,
 // which runs very early, i.e., before C++ initializers.
 static ControlFlowRuntime& getCFR() {
