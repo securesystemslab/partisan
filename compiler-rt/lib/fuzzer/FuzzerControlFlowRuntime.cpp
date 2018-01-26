@@ -85,10 +85,10 @@ extern "C" {
 
 ATTRIBUTE_INTERFACE
 ATTRIBUTE_NO_SANITIZE_ALL
-void __cf_register(const func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count) {
-  for (uint32_t i = 0; i < f_count; i++) {
-    const func_t& f = funcs[i];
-    fuzzer::ControlFlowRuntime::Func F(f.variants, &rand_ptrs[i], f.v_count);
+void __cf_register(const func_t* start, const func_t* end) {
+  for (; start < end; start++) {
+    const func_t& f = *start;
+    fuzzer::ControlFlowRuntime::Func F(f.rand_loc, f.variants, f.v_count);
     fuzzer::getCFR().registerFunc(F);
   }
 }

@@ -64,18 +64,15 @@ constexpr const char* SanCovVarPrefix = "__sancov_";
 struct FInfo {
   Function* const Original;
   const std::string Name;
-  const unsigned Index;
 
   Function* Trampoline;
   std::vector<Function*> Variants;
-  GlobalVariable* VariantArray;
+  GlobalVariable* RandLoc;
 };
 
 struct MInfo {
   std::vector<FInfo> Fns;
   std::vector<Function*> IgnoredFns;
-
-  GlobalVariable* RandPtrArray;
 };
 
 class ControlFlowDiversity : public ModulePass {
@@ -88,18 +85,16 @@ public:
 
 private:
   MInfo analyzeModule(Module& M);
-
-  void createTrampoline(FInfo& I, GlobalVariable* RandPtrArray);
-  void randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray);
+  void createRandLocation(Module& M, FInfo& I);
+  void createTrampoline(FInfo& I);
+  void randomizeCallSites(const FInfo& I);
   void createVariant(FInfo& I);
   void removeCoverage(Function* F);
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerChecks(Function* F);
-
-  GlobalVariable* createPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat = nullptr, Constant* Init = nullptr);
-  Constant* createFnPtrInit(Module& M, ArrayRef<Function*> variants);
-
-  void emitRuntimeMetadata(Module& M, MInfo& I);
+  StructType* createDescTy(Module& M);
+  void emitMetadata(Module& M, FInfo& I, StructType* DescTy);
+  void createModuleCtor(Module &M, StructType *DescTy);
   void addTraceStatements(Function* F);
 };
 } // namespace
@@ -117,63 +112,63 @@ void ControlFlowDiversity::getAnalysisUsage(AnalysisUsage& AU) const {
   ModulePass::getAnalysisUsage(AU);
 }
 
+static Type* getPtrTy(Module& M) {
+  return Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
+}
+
 bool ControlFlowDiversity::runOnModule(Module& M) {
   // Analyze module
-  MInfo mi = analyzeModule(M);
+  MInfo MI = analyzeModule(M);
 
   DEBUG(dbgs()
     << "Adding control flow diversity to module '" << M.getName()
-    << "', instrumented/total # of functions: " << mi.Fns.size() << "/" << (mi.Fns.size() + mi.IgnoredFns.size()) << "\n"
+    << "', instrumented/total # of functions: " << MI.Fns.size() << "/" << (MI.Fns.size() + MI.IgnoredFns.size()) << "\n"
 //    << "  " << MinimumEntryCount.ArgStr << "=" << MinimumEntryCount << "\n"
     << "  " << DiversifyByMemoryAccess.ArgStr << "=" << int(DiversifyByMemoryAccess.getValue()) << "\n"
     << "  " << DiversifyByHotness.ArgStr << "=" << int(DiversifyByHotness.getValue()) << "\n"
-    << "Instrumented functions:"; for (auto i : mi.Fns) dbgs() << "\n  " << i.Name;
-    dbgs() << "\nIgnored functions:"; for (auto F : mi.IgnoredFns) dbgs() << "\n  " << F->getName();
+    << "Instrumented functions:"; for (auto I : MI.Fns) dbgs() << "\n  " << I.Name;
+    dbgs() << "\nIgnored functions:"; for (auto F : MI.IgnoredFns) dbgs() << "\n  " << F->getName();
     dbgs() << "\n");
 
-  if (mi.Fns.empty()) {
+  if (MI.Fns.empty())
     return false;
-  }
-
-  // Create randomized ptr array
-  mi.RandPtrArray = createPtrArray(M, "rand_ptrs", mi.Fns.size());
 
   // Create trampoline, make first variant, randomize call sites
-  for (FInfo& i : mi.Fns) {
-    createTrampoline(i, mi.RandPtrArray);
-    randomizeCallSites(i, mi.RandPtrArray);
+  for (auto& I : MI.Fns) {
+    createRandLocation(M, I);
+    createTrampoline(I);
+    randomizeCallSites(I);
   }
 
   // Create more variants
-  for (FInfo& i : mi.Fns) {
+  for (auto& I : MI.Fns) {
     // 0) Coverage and sanitization
     // Converted from original
 
     // 1) Coverage only
-    createVariant(i);
-    removeSanitizerChecks(i.Variants[1]);
+    createVariant(I);
+    removeSanitizerChecks(I.Variants[1]);
 
     // 2) None
-    createVariant(i);
-    removeCoverage(i.Variants[2]);
-    removeSanitizerChecks(i.Variants[2]);
+    createVariant(I);
+    removeCoverage(I.Variants[2]);
+    removeSanitizerChecks(I.Variants[2]);
   }
 
-  // Create variant pointer arrays
-  for (FInfo& i : mi.Fns) {
-    auto* Init = createFnPtrInit(M, i.Variants);
-    auto* Comdat = i.Original->getComdat();
-    i.VariantArray = createPtrArray(M, i.Name, i.Variants.size(), Comdat, Init);
+  auto* DescTy = createDescTy(M);
+  // Create variant metadata
+  for (auto& I : MI.Fns) {
+    emitMetadata(M, I, DescTy);
   }
 
-  // Emit metadata for runtime randomization
-  emitRuntimeMetadata(M, mi);
+  // Create module ctor to register metadata with the runtime
+  createModuleCtor(M, DescTy);
 
   // Emit trace output.
   if (AddTracingOutput) {
-    for (FInfo& i : mi.Fns) {
-      for (Function* f : i.Variants) {
-        addTraceStatements(f);
+    for (auto& I : MI.Fns) {
+      for (auto* F : I.Variants) {
+        addTraceStatements(F);
       }
     }
   }
@@ -226,39 +221,44 @@ static bool shouldRandomize(const Function& F) {
 }
 
 MInfo ControlFlowDiversity::analyzeModule(Module& M) {
-  MInfo mi{};
-  unsigned idx = 0;
+  MInfo MI{};
   for (Function& F : M) {
     if (F.isDeclaration()) continue;
     if (shouldRandomize(F)) {
-      FInfo fi { &F, F.getName(), idx++ };
-      mi.Fns.push_back(fi);
+      FInfo I{&F, F.getName()};
+      MI.Fns.push_back(I);
     } else {
-      mi.IgnoredFns.push_back(&F);
+      MI.IgnoredFns.push_back(&F);
     }
   }
-  auto decls = std::count_if(M.begin(), M.end(), [](Function& F) { return F.isDeclaration(); });
-  assert(M.size() == decls + mi.Fns.size() + mi.IgnoredFns.size());
+  auto Decls = std::count_if(M.begin(), M.end(), [](Function &F) {
+    return F.isDeclaration();
+  });
+  assert(M.size() == Decls + MI.Fns.size() + MI.IgnoredFns.size());
 
-  return mi;
+  return MI;
 }
 
-static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IRBuilder<>& B) {
-  auto* F = I.Original;
+void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
+//  auto* Comdat = I.Original->getComdat(); // TODO(yln)
+  auto* Ty = getPtrTy(M);
+  auto isConstant = false;
+//  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage;
+  auto Linkage = GlobalVariable::PrivateLinkage;
+  auto* Init = Constant::getNullValue(Ty);
+  auto Name = "__cf_gen_randloc." + I.Name;
+  auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, Name);
+  GV->setExternallyInitialized(true);
+  GV->setComdat(I.Original->getComdat());
+//  GV->setComdat(Comdat);
+  GV->setSection("__cf_gen_randloc");
+  I.RandLoc = GV;
+}
 
-  // Get constant pointer to right function in randomized array
-  auto* Int32Ty = Type::getInt32Ty(F->getContext());
-  Constant* Indices[] = {
-      ConstantInt::get(Int32Ty, 0),   // global value is ptr
-      ConstantInt::get(Int32Ty, I.Index)
-  };
-  auto* Ptr = ConstantExpr::getGetElementPtr(nullptr, RandPtrArray, Indices);
-
-  // Cast to appropriate function pointer
-  auto* FuncPtrPtrTy = F->getFunctionType()->getPointerTo()->getPointerTo();
-  auto* FuncPtrPtr = ConstantExpr::getBitCast(Ptr, FuncPtrPtrTy);
-
-  return B.CreateLoad(FuncPtrPtr, I.Name +"_ptr");
+static LoadInst* loadVariantPtr(const FInfo& I, IRBuilder<>& B) {
+  auto* PtrTy = I.Original->getFunctionType()->getPointerTo()->getPointerTo();
+  auto* Ptr = B.CreateBitCast(I.RandLoc, PtrTy);
+  return B.CreateLoad(Ptr, I.Name +"_ptr");
 
 // TODO(yln): should it be volatile, atomic, etc..?
 // TODO(yln): Hints for the optimizer -- possible optimizations?
@@ -268,7 +268,7 @@ static LoadInst* loadVariantPtr(const FInfo& I, GlobalVariable* RandPtrArray, IR
 // The optional !dereferenceable metadata must reference a single metadata name <deref_bytes_node> corresponding to a metadata node with one i64 entry. The existence of the !dereferenceable metadata on the instruction tells the optimizer that the value loaded is known to be dereferenceable. The number of bytes known to be dereferenceable is specified by the integer value in the metadata node. This is analogous to the ‘’dereferenceable’’ attribute on parameters and return values. This metadata can only be applied to loads of a pointer type.
 }
 
-static void createTrampolineBody(FInfo &I, GlobalVariable* RandPtrArray) {
+static void createTrampolineBody(FInfo &I) {
   auto* F = I.Original;
 
   std::vector<Value*> Args;
@@ -280,7 +280,7 @@ static void createTrampolineBody(FInfo &I, GlobalVariable* RandPtrArray) {
   auto* BB = BasicBlock::Create(F->getContext(), "", I.Trampoline);
   IRBuilder<> B(BB);
 
-  auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
+  auto* VarPtr = loadVariantPtr(I, B);
   auto* Call = B.CreateCall(VarPtr, Args);
   Call->setCallingConv(F->getCallingConv());
   Call->setAttributes(F->getAttributes());
@@ -296,7 +296,7 @@ static void setVariantName(Function* F, StringRef Name, unsigned VariantNo) {
   F->addFnAttr("cf-variant", N);
 }
 
-void ControlFlowDiversity::createTrampoline(FInfo& I, GlobalVariable* RandPtrArray) {
+void ControlFlowDiversity::createTrampoline(FInfo& I) {
   auto* F = I.Original;
   auto* NF = Function::Create(F->getFunctionType(), F->getLinkage());
   I.Trampoline = NF;
@@ -306,7 +306,7 @@ void ControlFlowDiversity::createTrampoline(FInfo& I, GlobalVariable* RandPtrArr
   removeSanitizerAttributes(NF);
   NF->addFnAttr("cf-trampoline");
   NF->setComdat(F->getComdat());
-  createTrampolineBody(I, RandPtrArray);
+  createTrampolineBody(I);
   F->getParent()->getFunctionList().insert(F->getIterator(), NF);
 
   // Convert original function into first variant
@@ -338,7 +338,7 @@ static bool isCoverageInstOperand(const Value* V) {
 }
 
 // See [Value::replaceUsesExceptBlockAddr] for algorithm template
-void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* RandPtrArray) {
+void ControlFlowDiversity::randomizeCallSites(const FInfo& I) {
   auto* F = I.Original;
 //  F->removeDeadConstantUsers(); // TODO(yln): needed?
 
@@ -349,7 +349,7 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I, GlobalVariable* Ra
     if (auto CS = CallSite(U.getUser())) {
       if (CS.getCalledFunction() == F) {
         IRBuilder<> B(CS.getInstruction());
-        auto* VarPtr = loadVariantPtr(I, RandPtrArray, B);
+        auto* VarPtr = loadVariantPtr(I, B);
         CS.setCalledFunction(VarPtr);
         continue;
       }
@@ -528,87 +528,92 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
   // has some weird interaction when simplifying CFGs that had critical edges added by SanCov.
 }
 
-static GlobalVariable* createArray(Module& M, StringRef Name, Type* ElementTy, size_t Count, Comdat* Comdat, Constant* Init) {
-  auto* Ty = ArrayType::get(ElementTy, Count);
-  bool Constant = true;
-  if (!Init) {
-    Init = ConstantAggregateZero::get(Ty);
-    Constant = false;
+//  struct func_t {
+//    uintptr_t* rand_loc;        // Randomized ptr location
+//    const uintptr_t* variants;  // Variant pointers
+//    uint32_t v_count;           // Number of variants
+//  };
+StructType* ControlFlowDiversity::createDescTy(Module& M) {
+  auto& C = M.getContext();
+  auto* Int32Ty = Type::getInt32Ty(C);
+  auto* PtrPtrTy = getPtrTy(M)->getPointerTo();
+  Type* Fields[] {PtrPtrTy, PtrPtrTy, Int32Ty};
+  return StructType::create(C, Fields, "struct.cf_desc");
+}
+
+static Constant* createVariantPtrInit(ArrayRef<Function*> Variants, Type* PtrTy) {
+  std::vector<Constant*> Elems;
+  for (auto* F : Variants) {
+    auto* FnPtr = ConstantExpr::getPtrToInt(F, PtrTy);
+    Elems.push_back(FnPtr);
   }
-  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage;
-  auto* GV = new GlobalVariable(M, Ty, Constant, Linkage, Init, "__cf_gen_" + Name);
-  GV->setExternallyInitialized(!Constant);
+  auto* Ty = ArrayType::get(PtrTy, Variants.size());
+  return ConstantArray::get(Ty, Elems);
+}
+
+static GlobalVariable* createArray(Module& M, StringRef Name, Type* ElementTy, size_t Count, Constant* Init, Comdat* Comdat) {
+  auto* Ty = ArrayType::get(ElementTy, Count);
+  bool isConstant = true;
+//  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage; // TODO(yln)
+  auto Linkage = GlobalValue::PrivateLinkage;
+  auto N = "__cf_gen_variants." + Name;
+  auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, N);
   GV->setComdat(Comdat);
   return GV;
 }
 
-GlobalVariable* ControlFlowDiversity::createPtrArray(Module& M, StringRef Name, size_t Count, Comdat* Comdat, Constant* Init) {
-  auto* Ty = Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
-  return createArray(M, Name, Ty, Count, Comdat, Init);
-}
-
-Constant* ControlFlowDiversity::createFnPtrInit(Module& M, ArrayRef<Function*> variants) {
-  std::vector<Constant*> elems;
-  for (Function* F : variants) {
-    Constant* fnPtr = ConstantExpr::getCast(Instruction::PtrToInt, F, Type::getInt64Ty(M.getContext()));
-    elems.push_back(fnPtr);
-  }
-  ArrayType* type = ArrayType::get(Type::getInt64Ty(M.getContext()), variants.size());
-  return ConstantArray::get(type, elems);
-}
-
-static StructType* createDescTy(Module &M) {
-  auto& C = M.getContext();
-  Type* Fields[] {
-    Type::getInt64PtrTy(C), // Variant pointers
-    Type::getInt32Ty(C)     // Number of variants
-  };
-  return StructType::create(C, Fields, "struct.cf_desc");
-}
-
-static Constant* createDescInit(Module& M, StructType* DescTy, ArrayRef<FInfo> Funcs) {
-  auto& C = M.getContext();
-  auto* Zero = ConstantInt::get(Type::getInt32Ty(C), 0);
-  Constant* Indices[]{Zero, Zero};
-
-  std::vector<Constant*> Elems(Funcs.size());
-  for (const FInfo& I : Funcs) {
-    auto* VariantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, I.VariantArray, Indices);
-    auto* VariantCount = ConstantInt::get(Type::getInt32Ty(C), I.Variants.size());
-
-    Constant* Fields[]{VariantArrayPtr, VariantCount};
-    auto* Elem = ConstantStruct::get(DescTy, Fields);
-    Elems[I.Index] = Elem;
-  }
-  auto* Ty = ArrayType::get(DescTy, Funcs.size());
-  return ConstantArray::get(Ty, Elems);
-}
-
-static void createModuleCtor(Module& M, StructType* DescTy, GlobalVariable* DescArray, MInfo& I) {
+static Constant* createDescInit(Module& M, StructType* DescTy, FInfo& I, GlobalVariable* Variants) {
   auto& C = M.getContext();
   auto* Int32Ty = Type::getInt32Ty(C);
   auto* Zero = ConstantInt::get(Int32Ty, 0);
   Constant* Indices[]{Zero, Zero};
+  auto* VariantArrayPtr = ConstantExpr::getGetElementPtr(nullptr, Variants, Indices);
+  auto* VariantCount = ConstantInt::get(Int32Ty, I.Variants.size());
 
-  // void __cf_register(const func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count)
-  Type* ArgTys[]{DescTy->getPointerTo(), (Type::getInt64PtrTy(C)), Int32Ty};
-  Value* Args[] {
-      ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices),
-      ConstantExpr::getGetElementPtr(nullptr, I.RandPtrArray, Indices),
-      ConstantInt::get(Int32Ty, I.Fns.size())
-  };
-
-  Function* Ctor;
-  std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
-      M, "cf.module_ctor", "__cf_register", ArgTys, Args, "", /* WeakLinkage */ true);
-  appendToGlobalCtors(M, Ctor, /* Priority */ 0);
+  Constant* Fields[]{I.RandLoc, VariantArrayPtr, VariantCount};
+  return ConstantStruct::get(DescTy, Fields);
 }
 
-void ControlFlowDiversity::emitRuntimeMetadata(Module& M, MInfo& I) {
-  auto* Ty = createDescTy(M);
-  auto* Init = createDescInit(M, Ty, I.Fns);
-  auto* Array = createArray(M, "descs", Ty, I.Fns.size(), /* Comdat */ nullptr, Init);
-  createModuleCtor(M, Ty, Array, I);
+static void emitDescription(Module& M, StringRef Name, StructType* DescTy, Constant* Init, Comdat* Comdat) {
+  auto isConstant = true;
+//  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage; // TODO(yln)
+  auto Linkage = GlobalVariable::PrivateLinkage;
+  auto N = "__cf_gen_desc." + Name;
+  auto* GV = new GlobalVariable(M, DescTy, isConstant, Linkage, Init, N);
+  GV->setComdat(Comdat);
+  GV->setSection("__cf_gen_desc");
+}
+
+void ControlFlowDiversity::emitMetadata(Module& M, FInfo &I, StructType* DescTy) {
+  auto* PtrTy = getPtrTy(M);
+  auto* Comdat = I.Original->getComdat();
+
+  // Create variant array
+  auto Count = I.Variants.size();
+  auto* VariantInit = createVariantPtrInit(I.Variants, PtrTy);
+  auto* Variants = createArray(M, I.Name, PtrTy, Count, VariantInit, Comdat);
+
+  // Emit description
+  auto* DescInit = createDescInit(M, DescTy, I, Variants);
+  emitDescription(M, I.Name, DescTy, DescInit, Comdat);
+}
+
+void ControlFlowDiversity::createModuleCtor(Module& M, StructType* DescTy) {
+//  auto& C = M.getContext();
+//  auto* Zero = ConstantInt::get(Type::getInt32Ty(C), 0);
+//  Constant* Indices[]{Zero, Zero};
+//
+//  // void __cf_register(const func_t* start, const func_t* end)
+//  Type* ArgTys[]{DescTy->getPointerTo(), DescTy->getPointerTo()};
+//  Value* Args[] {
+//      ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices),
+//      ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices) // TODO(yln)
+//  };
+//
+//  Function* Ctor;
+//  std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
+//      M, "cf.module_ctor", "__cf_register", ArgTys, Args, "", /* WeakLinkage */ true);
+//  appendToGlobalCtors(M, Ctor, /* Priority */ 0);
 }
 
 static void insertTraceFPrintf(Module& M, StringRef output, StringRef fieldName, Instruction* before) {

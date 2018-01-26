@@ -172,15 +172,16 @@ extern "C" {
 // with fuzzer-no-link
 // Duplicated from [FuzzerControlFlowRuntime.h]
 struct func_t {
+  uptr* rand_loc;        // Randomized ptr location
   const uptr* variants;  // Variant pointers
   u32 v_count;           // Number of variants
 };
-// void __cf_register(const func_t* funcs, uintptr_t* rand_ptrs, uint32_t f_count)
-SANITIZER_INTERFACE_WEAK_DEF(void, __cf_register, const func_t* funcs, uptr* rand_ptrs, u32 f_count) {
+// void __cf_register(const func_t* start, const func_t* end)
+SANITIZER_INTERFACE_WEAK_DEF(void, __cf_register, const func_t* start, const func_t* end) {
   Printf("Code instrumented for CFD, but runtime not linked!\n");
   // Initialize with variant 0
-  for (u32 i = 0; i < f_count; i++) {
-    rand_ptrs[i] = funcs[i].variants[0];
+  for (; start < end; start++) {
+    *(start->rand_loc) = start->variants[0];
   }
 }
 

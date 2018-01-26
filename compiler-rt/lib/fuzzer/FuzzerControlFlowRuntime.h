@@ -10,6 +10,7 @@
 namespace {
 
 struct func_t {
+  uintptr_t* rand_loc;        // Randomized ptr location
   const uintptr_t* variants;  // Variant pointers
   uint32_t v_count;           // Number of variants
 };
@@ -21,8 +22,8 @@ namespace fuzzer {
 class ControlFlowRuntime {
 public:
   class Func {
-    const uintptr_t* Variants;
     uintptr_t* RandLoc;
+    const uintptr_t* Variants;
     uint32_t NumVariants;
     uintptr_t LastAddress{};
     uint32_t NumPCs{};
@@ -35,8 +36,8 @@ public:
       return {Variants, nullptr, 0};
     }
 
-    Func(const uintptr_t *Variants, uintptr_t *RandLoc, uint32_t NumVariants)
-        : Variants(Variants), RandLoc(RandLoc), NumVariants(NumVariants) {}
+    Func(uintptr_t *RandLoc, const uintptr_t *Variants, uint32_t NumVariants)
+        : RandLoc(RandLoc), Variants(Variants), NumVariants(NumVariants) {}
 
     bool operator<(const Func& F) const { return address() < F.address(); }
     bool operator==(const Func& F) const { return address() == F.address(); }
