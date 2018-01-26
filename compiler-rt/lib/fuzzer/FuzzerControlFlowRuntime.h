@@ -45,6 +45,8 @@ public:
     uintptr_t lastAddress() const { return LastAddress; }
 
     void setPCData(uintptr_t LastAddr, uint32_t NumPCs) {
+      assert(LastAddr && NumPCs);
+      assert(!LastAddress && !this->NumPCs);
       LastAddress = LastAddr;
       this->NumPCs = NumPCs;
       NumUnobservedPCs = NumPCs;
