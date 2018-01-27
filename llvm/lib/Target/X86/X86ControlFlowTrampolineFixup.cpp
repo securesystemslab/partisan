@@ -38,14 +38,14 @@ FunctionPass* llvm::createX86ControlFlowTrampolineFixupPass() {
   return new ControlFlowTrampolineFixup();
 }
 
-static MachineOperand& getRandPtrGlobal(MachineBasicBlock& MBB) {
+static MachineOperand& getRandLocGlobal(MachineBasicBlock& MBB) {
   for (auto& I : MBB) {
-    for (auto& OP : I.operands()) {
-      if (OP.isGlobal() && OP.getGlobal()->getName() == "__cf_gen_rand_ptrs")
-        return OP;
+    for (auto& Op : I.operands()) {
+      if (Op.isGlobal() && Op.getGlobal()->getName().startswith("__cf_gen_randloc."))
+        return Op;
     }
   }
-  llvm_unreachable("trampoline must contain reference to randomized pointer array");
+  llvm_unreachable("trampoline must contain reference to randomized pointer location");
 }
 
 bool ControlFlowTrampolineFixup::runOnMachineFunction(MachineFunction& MF) {
@@ -60,23 +60,23 @@ bool ControlFlowTrampolineFixup::runOnMachineFunction(MachineFunction& MF) {
     return false;
   }
 
-  // %RCX<def> = MOV64rm %RIP, 1, %noreg, <ga:@cf_rand_ptrs+8>, %noreg
   // <more instructions>
-  // TAILJMPr64 %RCX<kill>
+  // %rax = MOV64rm %rip, 1, %noreg, @__cf_gen_randloc.foo, %noreg
+  // TAILJMPr64 killed %rax
   // -->
-  // TAILJMPm64 %RIP, 1, %noreg, <ga:@cf_rand_ptrs+8>, %noreg
+  // TAILJMPm64 %rip, 1, %noreg, @__cf_gen_randloc.foo, %noreg
 
   auto* TTI = MF.getSubtarget().getInstrInfo();
-  MachineInstr* jmp = BuildMI(&MBB, DebugLoc(), TTI->get(X86::TAILJMPm64))
+  MachineInstr* Jmp = BuildMI(&MBB, DebugLoc(), TTI->get(X86::TAILJMPm64))
         .addReg(X86::RIP)
         .addImm(1)
         .addReg(0)
-        .add(getRandPtrGlobal(MBB))
+        .add(getRandLocGlobal(MBB))
         .addReg(0)
         ->removeFromParent();
 
   MBB.clear();
-  MBB.push_back(jmp);
+  MBB.push_back(Jmp);
 
   return true;
 }
