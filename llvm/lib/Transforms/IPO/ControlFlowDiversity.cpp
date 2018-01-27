@@ -112,10 +112,6 @@ void ControlFlowDiversity::getAnalysisUsage(AnalysisUsage& AU) const {
   ModulePass::getAnalysisUsage(AU);
 }
 
-static Type* getPtrTy(Module& M) {
-  return Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
-}
-
 bool ControlFlowDiversity::runOnModule(Module& M) {
   // Analyze module
   MInfo MI = analyzeModule(M);
@@ -237,6 +233,10 @@ MInfo ControlFlowDiversity::analyzeModule(Module& M) {
   assert(M.size() == Decls + MI.Fns.size() + MI.IgnoredFns.size());
 
   return MI;
+}
+
+static Type* getPtrTy(Module& M) {
+  return Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
 }
 
 void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
@@ -598,22 +598,30 @@ void ControlFlowDiversity::emitMetadata(Module& M, FInfo &I, StructType* DescTy)
   emitDescription(M, I.Name, DescTy, DescInit, Comdat);
 }
 
+static GlobalVariable* declareSectionGlobal(Module &M, StringRef Name, Type *Ty) {
+  auto Linkage = GlobalValue::ExternalLinkage;
+  auto *GV = new GlobalVariable(M, Ty, /* isConstant */ false,
+                                Linkage, /* Initializer */ nullptr, Name);
+  GV->setVisibility(GlobalValue::HiddenVisibility);
+  return GV;
+}
+
 void ControlFlowDiversity::createModuleCtor(Module& M, StructType* DescTy) {
-//  auto& C = M.getContext();
-//  auto* Zero = ConstantInt::get(Type::getInt32Ty(C), 0);
-//  Constant* Indices[]{Zero, Zero};
-//
-//  // void __cf_register(const func_t* start, const func_t* end)
-//  Type* ArgTys[]{DescTy->getPointerTo(), DescTy->getPointerTo()};
-//  Value* Args[] {
-//      ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices),
-//      ConstantExpr::getGetElementPtr(nullptr, DescArray, Indices) // TODO(yln)
-//  };
-//
-//  Function* Ctor;
-//  std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
-//      M, "cf.module_ctor", "__cf_register", ArgTys, Args, "", /* WeakLinkage */ true);
-//  appendToGlobalCtors(M, Ctor, /* Priority */ 0);
+  auto* DescPtrTy = DescTy->getPointerTo();
+  auto* Start = declareSectionGlobal(M, "__start___cf_gen_desc" , DescPtrTy);
+  auto* End = declareSectionGlobal(M, "__stop___cf_gen_desc" , DescPtrTy);
+
+  // void __cf_register(const func_t* start, const func_t* end)
+  Type* ArgTys[]{DescPtrTy, DescPtrTy};
+  Value* Args[] {
+      ConstantExpr::getPointerCast(Start, DescPtrTy),
+      ConstantExpr::getPointerCast(End, DescPtrTy)
+  };
+
+  Function* Ctor;
+  std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
+      M, "cf.module_ctor", "__cf_register", ArgTys, Args, "", /* WeakLinkage */ true);
+  appendToGlobalCtors(M, Ctor, /* Priority */ 0);
 }
 
 static void insertTraceFPrintf(Module& M, StringRef output, StringRef fieldName, Instruction* before) {
