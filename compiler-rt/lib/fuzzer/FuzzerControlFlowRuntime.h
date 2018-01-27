@@ -33,7 +33,7 @@ public:
     static Func makeKey(uintptr_t Address) {
       static uintptr_t Variants[1];
       Variants[0] = Address;
-      return {Variants, nullptr, 0};
+      return {nullptr, Variants, 0};
     }
 
     Func(uintptr_t *RandLoc, const uintptr_t *Variants, uint32_t NumVariants)
