@@ -235,8 +235,9 @@ MInfo ControlFlowDiversity::analyzeModule(Module& M) {
   return MI;
 }
 
-static Type* getPtrTy(Module& M) {
-  return Type::getInt64Ty(M.getContext()); // Pointers are stored as 64 bit ints
+static Type* getPtrTy(const Module& M) {
+  auto Bits = M.getDataLayout().getPointerSizeInBits();
+  return Type::getIntNTy(M.getContext(), Bits); // Pointers are stored as ints
 }
 
 void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
@@ -575,6 +576,7 @@ static Constant* createDescInit(Module& M, StructType* DescTy, FInfo& I, GlobalV
 }
 
 static void emitDescription(Module& M, StringRef Name, StructType* DescTy, Constant* Init, Comdat* Comdat) {
+  auto& DL = M.getDataLayout();
   auto isConstant = true;
 //  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage; // TODO(yln)
   auto Linkage = GlobalVariable::PrivateLinkage;
@@ -582,6 +584,7 @@ static void emitDescription(Module& M, StringRef Name, StructType* DescTy, Const
   auto* GV = new GlobalVariable(M, DescTy, isConstant, Linkage, Init, N);
   GV->setComdat(Comdat);
   GV->setSection("__cf_gen_desc");
+  GV->setAlignment(DL.getPointerSize());
 }
 
 void ControlFlowDiversity::emitMetadata(Module& M, FInfo &I, StructType* DescTy) {
@@ -600,7 +603,7 @@ void ControlFlowDiversity::emitMetadata(Module& M, FInfo &I, StructType* DescTy)
 
 static GlobalVariable* declareSectionGlobal(Module &M, StringRef Name, Type *Ty) {
   auto Linkage = GlobalValue::ExternalLinkage;
-  auto *GV = new GlobalVariable(M, Ty, /* isConstant */ false,
+  auto* GV = new GlobalVariable(M, Ty, /* isConstant */ false,
                                 Linkage, /* Initializer */ nullptr, Name);
   GV->setVisibility(GlobalValue::HiddenVisibility);
   return GV;

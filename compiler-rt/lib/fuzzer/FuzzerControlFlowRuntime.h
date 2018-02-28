@@ -36,7 +36,7 @@ public:
       return {nullptr, Variants, 0};
     }
 
-    Func(uintptr_t *RandLoc, const uintptr_t *Variants, uint32_t NumVariants)
+    Func(uintptr_t* RandLoc, const uintptr_t* Variants, uint32_t NumVariants)
         : RandLoc(RandLoc), Variants(Variants), NumVariants(NumVariants) {}
 
     bool operator<(const Func& F) const { return address() < F.address(); }
