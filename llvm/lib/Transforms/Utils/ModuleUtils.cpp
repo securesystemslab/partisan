@@ -139,29 +139,25 @@ Function *llvm::checkSanitizerInterfaceFunction(Constant *FuncOrBitcast) {
 }
 
 Function *llvm::declareSanitizerInitFunction(Module &M, StringRef InitName,
-                                             ArrayRef<Type *> InitArgTypes,
-                                             bool WeakLinkage) {
+                                             ArrayRef<Type *> InitArgTypes) {
   assert(!InitName.empty() && "Expected init function name");
   Function *F = checkSanitizerInterfaceFunction(M.getOrInsertFunction(
       InitName,
       FunctionType::get(Type::getVoidTy(M.getContext()), InitArgTypes, false),
       AttributeList()));
-  auto Linkage = WeakLinkage ? Function::ExternalWeakLinkage
-                             : Function::ExternalLinkage;
-  F->setLinkage(Linkage);
+  F->setLinkage(Function::ExternalLinkage);
   return F;
 }
 
 std::pair<Function *, Function *> llvm::createSanitizerCtorAndInitFunctions(
     Module &M, StringRef CtorName, StringRef InitName,
     ArrayRef<Type *> InitArgTypes, ArrayRef<Value *> InitArgs,
-    StringRef VersionCheckName, bool UseWeakLinkageForInitFunction) {
+    StringRef VersionCheckName) {
   assert(!InitName.empty() && "Expected init function name");
   assert(InitArgs.size() == InitArgTypes.size() &&
          "Sanitizer's init function expects different number of arguments");
   Function *InitFunction =
-      declareSanitizerInitFunction(M, InitName, InitArgTypes,
-                                   UseWeakLinkageForInitFunction);
+      declareSanitizerInitFunction(M, InitName, InitArgTypes);
   Function *Ctor = Function::Create(
       FunctionType::get(Type::getVoidTy(M.getContext()), false),
       GlobalValue::InternalLinkage, CtorName, &M);
