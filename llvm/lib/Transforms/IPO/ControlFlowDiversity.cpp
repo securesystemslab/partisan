@@ -241,14 +241,16 @@ static Type* getPtrTy(const Module& M) {
 }
 
 void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
+  auto* Comdat = I.Original->getComdat();
   auto* Ty = getPtrTy(M);
   auto isConstant = false;
-  auto Linkage = GlobalVariable::PrivateLinkage;
+  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage
+                        : GlobalValue::PrivateLinkage;
   auto* Init = Constant::getNullValue(Ty);
   auto Name = "__cf_gen_randloc." + I.Name;
   auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, Name);
   GV->setExternallyInitialized(true);
-  GV->setComdat(I.Original->getComdat());
+  GV->setComdat(Comdat);
   I.RandLoc = GV;
 }
 
@@ -573,7 +575,7 @@ static Constant* createDescInit(Module& M, StructType* DescTy, FInfo& I, GlobalV
 static void emitDescription(Module& M, StringRef Name, StructType* DescTy, Constant* Init, Comdat* Comdat) {
   auto& DL = M.getDataLayout();
   auto isConstant = true;
-  auto Linkage = GlobalVariable::PrivateLinkage;
+  auto Linkage = GlobalValue::PrivateLinkage;
   auto N = "__cf_gen_desc." + Name;
   auto* GV = new GlobalVariable(M, DescTy, isConstant, Linkage, Init, N);
   GV->setComdat(Comdat);
