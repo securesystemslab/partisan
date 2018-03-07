@@ -249,7 +249,6 @@ void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
   auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, Name);
   GV->setExternallyInitialized(true);
   GV->setComdat(I.Original->getComdat());
-  GV->setSection("__cf_gen_randloc");
   I.RandLoc = GV;
 }
 
