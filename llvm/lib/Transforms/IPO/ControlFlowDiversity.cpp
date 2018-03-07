@@ -241,17 +241,14 @@ static Type* getPtrTy(const Module& M) {
 }
 
 void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
-//  auto* Comdat = I.Original->getComdat(); // TODO(yln)
   auto* Ty = getPtrTy(M);
   auto isConstant = false;
-//  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage;
   auto Linkage = GlobalVariable::PrivateLinkage;
   auto* Init = Constant::getNullValue(Ty);
   auto Name = "__cf_gen_randloc." + I.Name;
   auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, Name);
   GV->setExternallyInitialized(true);
   GV->setComdat(I.Original->getComdat());
-//  GV->setComdat(Comdat);
   GV->setSection("__cf_gen_randloc");
   I.RandLoc = GV;
 }
@@ -262,7 +259,7 @@ static LoadInst* loadVariantPtr(const FInfo& I, IRBuilder<>& B) {
   return B.CreateLoad(Ptr, I.Name +"_ptr");
 
 // TODO(yln): should it be volatile, atomic, etc..?
-// TODO(yln): Hints for the optimizer -- possible optimizations?
+// Hints for the optimizer -- possible optimizations?
 // Is this even useful considering we fix up trampolines at MachineInstr level?
 // http://llvm.org/docs/LangRef.html#id188
 // The optional !nonnull metadata must reference a single metadata name <index> corresponding to a metadata node with no entries. The existence of the !nonnull metadata on the instruction tells the optimizer that the value loaded is known to never be null. This is analogous to the nonnull attribute on parameters and return values. This metadata can only be applied to loads of a pointer type.
@@ -555,7 +552,6 @@ static Constant* createVariantPtrInit(ArrayRef<Function*> Variants, Type* PtrTy)
 static GlobalVariable* createArray(Module& M, StringRef Name, Type* ElementTy, size_t Count, Constant* Init, Comdat* Comdat) {
   auto* Ty = ArrayType::get(ElementTy, Count);
   bool isConstant = true;
-//  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage; // TODO(yln)
   auto Linkage = GlobalValue::PrivateLinkage;
   auto N = "__cf_gen_variants." + Name;
   auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, N);
@@ -578,7 +574,6 @@ static Constant* createDescInit(Module& M, StructType* DescTy, FInfo& I, GlobalV
 static void emitDescription(Module& M, StringRef Name, StructType* DescTy, Constant* Init, Comdat* Comdat) {
   auto& DL = M.getDataLayout();
   auto isConstant = true;
-//  auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage : GlobalValue::PrivateLinkage; // TODO(yln)
   auto Linkage = GlobalVariable::PrivateLinkage;
   auto N = "__cf_gen_desc." + Name;
   auto* GV = new GlobalVariable(M, DescTy, isConstant, Linkage, Init, N);
