@@ -765,7 +765,7 @@ void ControlFlowDiversity::addTraceStatements(Function* F) {
         ConstantExpr* gep = dyn_cast<ConstantExpr>(load->getOperand(0));
         if (!gep || gep->getNumOperands() != 3) continue;
         GlobalVariable* var = dyn_cast<GlobalVariable>(gep->getOperand(0));
-        if (var->getName() != "__cf_gen_rand_ptrs") continue;
+        if (!var->getName().startswith("__cf_gen_randloc.")) continue;
 
         insertTraceFPrintf(M, "returned to "+ FName, "return_"+ FName, I.getNextNode());
       }
