@@ -60,6 +60,7 @@ static cl::opt<bool> AddTracingOutput(
 namespace {
 constexpr const char* SanCovFnPrefix = "__sanitizer_cov_";
 constexpr const char* SanCovVarPrefix = "__sancov_";
+constexpr const char* CtorName = "cf.module_ctor";
 
 struct FInfo {
   Function* const Original;
@@ -619,8 +620,9 @@ void ControlFlowDiversity::createModuleCtor(Module& M, StructType* DescTy) {
 
   Function* Ctor;
   std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
-      M, "cf.module_ctor", "__cf_register", ArgTys, Args);
-  appendToGlobalCtors(M, Ctor, /* Priority */ 0);
+      M, CtorName, "__cf_register", ArgTys, Args);
+  Ctor->setComdat(M.getOrInsertComdat(CtorName)); // Deduplicate ctor
+  appendToGlobalCtors(M, Ctor, /* Priority */ 0, Ctor);
 }
 
 static void insertTraceFPrintf(Module& M, StringRef output, StringRef fieldName, Instruction* before) {
