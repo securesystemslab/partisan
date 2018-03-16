@@ -51,6 +51,14 @@ public:
                static_cast<size_t>(Options.MaxTotalTimeSec);
   }
 
+  bool shouldBenchmark() {
+    auto Secs = duration_cast<seconds>(system_clock::now() - LastBenchmarkTime);
+    auto Res = Secs.count() >= 60;
+    // Add duration instead of assigning now() to make sure clock doesn't drift
+    if (Res) LastBenchmarkTime += seconds(60);
+    return Res;
+  }
+
   size_t execPerSec() {
     size_t Seconds = secondsSinceProcessStartUp();
     return Seconds ? TotalNumberOfRuns / Seconds : 0;
@@ -136,6 +144,7 @@ private:
   FuzzingOptions Options;
 
   system_clock::time_point ProcessStartTime = system_clock::now();
+  system_clock::time_point LastBenchmarkTime = ProcessStartTime;
   system_clock::time_point UnitStartTime, UnitStopTime;
   long TimeOfLongestUnitInSeconds = 0;
   long EpochOfLastReadOfOutputCorpus = 0;
