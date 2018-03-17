@@ -474,7 +474,6 @@ static void initTargetOptions(llvm::TargetOptions &Options,
 static void addControlFlowDiversityPass(const PassManagerBuilder &Builder,
                                         legacy::PassManagerBase &PM) {
   PM.add(createControlFlowDiversityPass());
-  PM.add(createCFGSimplificationPass(1, true, true, false, true));
 }
 
 void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,

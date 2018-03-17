@@ -146,10 +146,11 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     createVariant(I);
     removeSanitizerChecks(I.Variants[1]);
 
-    // 2) None
-    createVariant(I);
-    removeCoverage(I.Variants[2]);
-    removeSanitizerChecks(I.Variants[2]);
+    // TODO(yln): not even used
+//    // 2) None
+//    createVariant(I);
+//    removeCoverage(I.Variants[2]);
+//    removeSanitizerChecks(I.Variants[2]);
   }
 
   auto* DescTy = createDescTy(M);
@@ -422,6 +423,7 @@ void ControlFlowDiversity::removeCoverage(Function* F) {
         assert(B->isConditional());
         assert(isCoverageInst(&*B->getSuccessor(0)->begin()));
         // Hard-code branch target, will be cleaned up by SimplifyCFG pass
+        // TODO(yln): above is not true anymore
         B->setCondition(ConstantInt::getFalse(F->getContext()));
       } else {
         I.eraseFromParent();
