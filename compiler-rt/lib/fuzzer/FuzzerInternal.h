@@ -52,10 +52,11 @@ public:
   }
 
   bool shouldBenchmark() {
+    auto Interval = seconds(60);
     auto Secs = duration_cast<seconds>(system_clock::now() - LastBenchmarkTime);
-    auto Res = Secs.count() >= 60;
+    auto Res = Secs >= Interval;
     // Add duration instead of assigning now() to make sure clock doesn't drift
-    if (Res) LastBenchmarkTime += seconds(60);
+    if (Res) LastBenchmarkTime += Interval;
     return Res;
   }
 
