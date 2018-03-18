@@ -9,7 +9,8 @@ namespace fuzzer {
 
 void ControlFlowRuntime::registerFunc(Func& F) {
   Funcs.push_back(F);
-  F.activateVariant(V_FullSanitization);
+//  F.activateVariant(V_FullSanitization);
+  F.activateVariant(V_CoverageOnly);
 }
 
 void ControlFlowRuntime::completeFuncRegistration() {
@@ -52,8 +53,9 @@ void ControlFlowRuntime::activateFullSanitization() {
 void ControlFlowRuntime::restoreSanitizationLevels() {
   assert(isActive());
   for (auto& F : Funcs) {
-    if (F.isFullyExplored())
-      F.activateVariant(V_CoverageOnly);
+    F.activateVariant(V_CoverageOnly);
+//    if (F.isFullyExplored())
+//      F.activateVariant(V_CoverageOnly);
   }
 }
 
