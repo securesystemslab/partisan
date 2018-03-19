@@ -547,6 +547,13 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addBoundsCheckingPass);
   }
 
+  if (CodeGenOpts.ControlFlowDiversity) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                           addControlFlowDiversityPass);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                           addControlFlowDiversityPass);
+  }
+
   if (CodeGenOpts.SanitizeCoverageType ||
       CodeGenOpts.SanitizeCoverageIndirectCalls ||
       CodeGenOpts.SanitizeCoverageTraceCmp) {
@@ -554,14 +561,6 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addSanitizerCoveragePass);
     PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                            addSanitizerCoveragePass);
-  }
-
-  // The CFD should come after coverage, but before the rest of sanitizers.
-  if (CodeGenOpts.ControlFlowDiversity) {
-    PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
-                           addControlFlowDiversityPass);
-    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
-                           addControlFlowDiversityPass);
   }
 
   if (LangOpts.Sanitize.has(SanitizerKind::Address)) {

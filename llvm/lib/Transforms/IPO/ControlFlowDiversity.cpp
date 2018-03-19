@@ -139,12 +139,12 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
 
   // Create more variants
   for (auto& I : MI.Fns) {
-    // 0) Coverage and sanitization
+    // 0) Coverage ONLY
     // Converted from original
 
-    // 1) Coverage only
+    // 1) Sanitization ONLY
     createVariant(I);
-    removeSanitizerChecks(I.Variants[1]);
+    removeSanitizerChecks(I.Variants[0]);
 
     // TODO(yln): not even used
 //    // 2) None
