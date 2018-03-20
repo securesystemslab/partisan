@@ -466,9 +466,10 @@ static bool shouldInstrumentBlock(const Function &F, const BasicBlock *BB,
 }
 
 bool SanitizerCoverageModule::runOnFunction(Function &F) {
-  if (F.getFnAttribute("cf-variant").getValueAsString() != "0")
-    return false;
   if (F.empty())
+    return false;
+  if (F.hasFnAttribute("cf-variant") &&
+      F.getFnAttribute("cf-variant").getValueAsString() != "0")
     return false;
   if (F.getName().find(".module_ctor") != std::string::npos)
     return false; // Should not instrument sanitizer init functions.
