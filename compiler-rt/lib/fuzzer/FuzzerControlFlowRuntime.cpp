@@ -34,8 +34,11 @@ void ControlFlowRuntime::handleNewObservedPC(uintptr_t PC) {
   if (I != Funcs.begin() && (--I)->lastAddress() >= PC) {
     assert(I->address() <= PC && PC <= I->lastAddress());
     if (I->handleNewObservedPC()) {
-      I->activateVariant(V_Fast);
-      Printf("\tCFD: Activated fast variant for ");
+      // Actually don't do this here so we get all the coverage/features when
+      // reading a seed corpus. Fast variants will be activated once we find the
+      // first fresh input anyways.
+      // I->activateVariant(V_Fast);
+      Printf("\tCFD: Activate fast variant for ");
       PrintPC("%f %L\n", "%p\n", PC + 1);
     }
   }
