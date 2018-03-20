@@ -468,6 +468,8 @@ static bool shouldInstrumentBlock(const Function &F, const BasicBlock *BB,
 bool SanitizerCoverageModule::runOnFunction(Function &F) {
   if (F.empty())
     return false;
+  if (F.hasFnAttribute("cf-trampoline"))
+    return false;
   if (F.hasFnAttribute("cf-variant") &&
       F.getFnAttribute("cf-variant").getValueAsString() != "0")
     return false;
