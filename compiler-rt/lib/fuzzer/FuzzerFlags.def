@@ -96,6 +96,7 @@ FUZZER_FLAG_STRING(exact_artifact_path,
                    "as $(exact_artifact_path). This overrides -artifact_prefix "
                    "and will not use checksum in the file name. Do not "
                    "use the same path for several parallel processes.")
+FUZZER_FLAG_INT(print_new_units, 1, "If 1, print out successful units/inputs.")
 FUZZER_FLAG_INT(print_pcs, 0, "If 1, print out newly covered PCs.")
 FUZZER_FLAG_INT(print_funcs, 2, "If >=1, print out at most this number of "
                                 "newly covered functions.")

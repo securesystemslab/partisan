@@ -610,6 +610,7 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   bool DoPlainRun = AllInputsAreFiles();
   Options.SaveArtifacts =
       !DoPlainRun || Flags.minimize_crash_internal_step;
+  Options.PrintNEW = Flags.print_new_units;
   Options.PrintNewCovPcs = Flags.print_pcs;
   Options.PrintNewCovFuncs = Flags.print_funcs;
   Options.PrintFinalStats = Flags.print_final_stats;
