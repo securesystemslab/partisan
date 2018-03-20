@@ -73,6 +73,7 @@ public:
   void registerPC(uintptr_t EntryBlock, uintptr_t LastBlock, uint32_t NumPCs);
   void handleNewObservedPC(uintptr_t PC);
   void activateFullSanitization();
+  void activateFullCoverage();
   void restoreCoverageLevels();
   void printStats() const;
 };

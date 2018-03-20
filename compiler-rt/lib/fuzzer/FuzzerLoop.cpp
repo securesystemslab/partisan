@@ -444,7 +444,15 @@ bool Fuzzer::RunOne(const uint8_t *Data, size_t Size, bool MayDeleteFile,
   if (!Size)
     return false;
 
+  // Necessary for reducing inputs; otherwise we will never find the complete feature set
+  bool Reduce = II && Size < II->U.size();
+  if (Reduce && CFR.isActive())
+    CFR.activateFullCoverage();
+
   ExecuteCallback(Data, Size);
+
+  if (Reduce && CFR.isActive())
+    CFR.restoreCoverageLevels();
 
   UniqFeatureSetTmp.clear();
   size_t FoundUniqFeaturesOfII = 0;
@@ -650,11 +658,6 @@ void Fuzzer::MutateAndTestOne() {
     assert(NewSize <= CurrentMaxMutationLen && "Mutator return oversized unit");
     Size = NewSize;
     II.NumExecutedMutations++;
-
-    // TODO(yln): reduce_inputs will not work with my plan, because new (shorter) inputs
-    // will never manage to get the same feature set (since we have less coverage
-    // instrumentation after switching)
-    // hacking idea: If input is shorter, always use variant with coverage instr.
 
     bool FoundUniqFeatures = false;
     bool NewCov = RunOne(CurrentUnitData, Size, /*MayDeleteFile=*/true, &II,

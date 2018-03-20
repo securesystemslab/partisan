@@ -48,6 +48,13 @@ void ControlFlowRuntime::activateFullSanitization() {
   }
 }
 
+void ControlFlowRuntime::activateFullCoverage() {
+  assert(isActive());
+  for (auto& F : Funcs) {
+    F.activateVariant(V_Coverage);
+  }
+}
+
 void ControlFlowRuntime::restoreCoverageLevels() {
   assert(isActive());
   for (auto& F : Funcs) {
