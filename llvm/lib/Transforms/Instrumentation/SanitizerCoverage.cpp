@@ -215,15 +215,6 @@ private:
   std::pair<GlobalVariable *, GlobalVariable *>
   CreateSecStartEnd(Module &M, const char *Section, Type *Ty);
 
-  Value* createPCArg(IRBuilder<>& IRB) {
-    auto* BB = IRB.GetInsertBlock();
-    auto* F = BB->getParent();
-    // Can't take the address of the entry block
-    auto *PC = (BB == &F->getEntryBlock()) ? static_cast<Value *>(F)
-                                           : BlockAddress::get(BB);
-    return IRB.CreatePtrToInt(PC, IntptrTy);
-  }
-
   void SetNoSanitizeMetadata(Instruction *I) {
     I->setMetadata(I->getModule()->getMDKindID("nosanitize"),
                    MDNode::get(*C, None));
@@ -319,45 +310,45 @@ bool SanitizerCoverageModule::runOnModule(Module &M) {
   Int8Ty = IRB.getInt8Ty();
 
   SanCovTracePCIndir = checkSanitizerInterfaceFunction(
-      M.getOrInsertFunction(SanCovTracePCIndirName, VoidTy, IntptrTy, IntptrTy));
+      M.getOrInsertFunction(SanCovTracePCIndirName, VoidTy, IntptrTy));
   SanCovTraceCmpFunction[0] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceCmp1, VoidTy, IRB.getInt8Ty(), IRB.getInt8Ty(), IntptrTy));
+          SanCovTraceCmp1, VoidTy, IRB.getInt8Ty(), IRB.getInt8Ty()));
   SanCovTraceCmpFunction[1] = checkSanitizerInterfaceFunction(
       M.getOrInsertFunction(SanCovTraceCmp2, VoidTy, IRB.getInt16Ty(),
-                            IRB.getInt16Ty(), IntptrTy));
+                            IRB.getInt16Ty()));
   SanCovTraceCmpFunction[2] = checkSanitizerInterfaceFunction(
       M.getOrInsertFunction(SanCovTraceCmp4, VoidTy, IRB.getInt32Ty(),
-                            IRB.getInt32Ty(), IntptrTy));
+                            IRB.getInt32Ty()));
   SanCovTraceCmpFunction[3] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceCmp8, VoidTy, Int64Ty, Int64Ty, IntptrTy));
+          SanCovTraceCmp8, VoidTy, Int64Ty, Int64Ty));
 
   SanCovTraceConstCmpFunction[0] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceConstCmp1, VoidTy, Int8Ty, Int8Ty, IntptrTy));
+          SanCovTraceConstCmp1, VoidTy, Int8Ty, Int8Ty));
   SanCovTraceConstCmpFunction[1] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceConstCmp2, VoidTy, Int16Ty, Int16Ty, IntptrTy));
+          SanCovTraceConstCmp2, VoidTy, Int16Ty, Int16Ty));
   SanCovTraceConstCmpFunction[2] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceConstCmp4, VoidTy, Int32Ty, Int32Ty, IntptrTy));
+          SanCovTraceConstCmp4, VoidTy, Int32Ty, Int32Ty));
   SanCovTraceConstCmpFunction[3] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceConstCmp8, VoidTy, Int64Ty, Int64Ty, IntptrTy));
+          SanCovTraceConstCmp8, VoidTy, Int64Ty, Int64Ty));
 
   SanCovTraceDivFunction[0] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceDiv4, VoidTy, IRB.getInt32Ty(), IntptrTy));
+          SanCovTraceDiv4, VoidTy, IRB.getInt32Ty()));
   SanCovTraceDivFunction[1] =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceDiv8, VoidTy, Int64Ty, IntptrTy));
+          SanCovTraceDiv8, VoidTy, Int64Ty));
   SanCovTraceGepFunction =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceGep, VoidTy, IntptrTy, IntptrTy));
+          SanCovTraceGep, VoidTy, IntptrTy));
   SanCovTraceSwitchFunction =
       checkSanitizerInterfaceFunction(M.getOrInsertFunction(
-          SanCovTraceSwitchName, VoidTy, Int64Ty, Int64PtrTy, IntptrTy));
+          SanCovTraceSwitchName, VoidTy, Int64Ty, Int64PtrTy));
 
   Constant *SanCovLowestStackConstant =
       M.getOrInsertGlobal(SanCovLowestStackName, IntptrTy);
@@ -639,8 +630,7 @@ void SanitizerCoverageModule::InjectCoverageForIndirectCalls(
     Value *Callee = CS.getCalledValue();
     if (isa<InlineAsm>(Callee))
       continue;
-    IRB.CreateCall(SanCovTracePCIndir,
-                   {IRB.CreatePointerCast(Callee, IntptrTy), createPCArg(IRB)});
+    IRB.CreateCall(SanCovTracePCIndir, IRB.CreatePointerCast(Callee, IntptrTy));
   }
 }
 
@@ -682,7 +672,7 @@ void SanitizerCoverageModule::InjectTraceForSwitch(
           ConstantArray::get(ArrayOfInt64Ty, Initializers),
           "__sancov_gen_cov_switch_values");
       IRB.CreateCall(SanCovTraceSwitchFunction,
-                     {Cond, IRB.CreatePointerCast(GV, Int64PtrTy), createPCArg(IRB)});
+                     {Cond, IRB.CreatePointerCast(GV, Int64PtrTy)});
     }
   }
 }
@@ -701,7 +691,7 @@ void SanitizerCoverageModule::InjectTraceForDiv(
     if (CallbackIdx < 0) continue;
     auto Ty = Type::getIntNTy(*C, TypeSize);
     IRB.CreateCall(SanCovTraceDivFunction[CallbackIdx],
-                   {IRB.CreateIntCast(A1, Ty, true), createPCArg(IRB)});
+                   {IRB.CreateIntCast(A1, Ty, true)});
   }
 }
 
@@ -712,7 +702,7 @@ void SanitizerCoverageModule::InjectTraceForGep(
     for (auto I = GEP->idx_begin(); I != GEP->idx_end(); ++I)
       if (!isa<ConstantInt>(*I) && (*I)->getType()->isIntegerTy())
         IRB.CreateCall(SanCovTraceGepFunction,
-                       {IRB.CreateIntCast(*I, IntptrTy, true), createPCArg(IRB)});
+                       {IRB.CreateIntCast(*I, IntptrTy, true)});
   }
 }
 
@@ -746,7 +736,7 @@ void SanitizerCoverageModule::InjectTraceForCmp(
 
       auto Ty = Type::getIntNTy(*C, TypeSize);
       IRB.CreateCall(CallbackFunc, {IRB.CreateIntCast(A0, Ty, true),
-              IRB.CreateIntCast(A1, Ty, true), createPCArg(IRB)});
+              IRB.CreateIntCast(A1, Ty, true)});
     }
   }
 }
