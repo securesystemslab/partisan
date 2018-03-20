@@ -9,9 +9,7 @@ namespace fuzzer {
 
 void ControlFlowRuntime::registerFunc(Func& F) {
   Funcs.push_back(F);
-//  F.activateVariant(V_FullSanitization);
-//  F.activateVariant(V_CoverageOnly);
-  F.activateVariant(0);
+  F.activateVariant(V_Coverage);
 }
 
 void ControlFlowRuntime::completeFuncRegistration() {
@@ -36,9 +34,8 @@ void ControlFlowRuntime::handleNewObservedPC(uintptr_t PC) {
   if (I != Funcs.begin() && (--I)->lastAddress() >= PC) {
     assert(I->address() <= PC && PC <= I->lastAddress());
     if (I->handleNewObservedPC()) {
-      auto VariantNo = V_CoverageOnly;
-//      I->activateVariant(VariantNo);
-      Printf("\tCFD: Activated variant %u for ", VariantNo);
+      I->activateVariant(V_Fast);
+      Printf("\tCFD: Activated fast variant for ");
       PrintPC("%f %L\n", "%p\n", PC + 1);
     }
   }
@@ -47,18 +44,15 @@ void ControlFlowRuntime::handleNewObservedPC(uintptr_t PC) {
 void ControlFlowRuntime::activateFullSanitization() {
   assert(isActive());
   for (auto& F : Funcs) {
-    F.activateVariant(1);
-//    F.activateVariant(V_FullSanitization);
+    F.activateVariant(V_Sanitization);
   }
 }
 
-void ControlFlowRuntime::restoreSanitizationLevels() {
+void ControlFlowRuntime::restoreCoverageLevels() {
   assert(isActive());
   for (auto& F : Funcs) {
-    F.activateVariant(0);
-//    F.activateVariant(V_CoverageOnly);
-//    if (F.isFullyExplored())
-//      F.activateVariant(V_CoverageOnly);
+    auto V = F.isFullyExplored() ? V_Fast : V_Coverage;
+    F.activateVariant(V);
   }
 }
 

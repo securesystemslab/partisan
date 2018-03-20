@@ -90,7 +90,6 @@ private:
   void createTrampoline(FInfo& I);
   void randomizeCallSites(const FInfo& I);
   void createVariant(FInfo& I);
-  void removeCoverage(Function* F);
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerChecks(Function* F);
   StructType* createDescTy(Module& M);
@@ -139,18 +138,12 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
 
   // Create more variants
   for (auto& I : MI.Fns) {
-    // 0) Coverage ONLY
-    // Converted from original
-
-    // 1) Sanitization ONLY
-    createVariant(I);
+    // 0) Coverage (converted from original), cov only added to variant 0
+    // 1) Sanitization
+    // 2) Fast
+    createVariant(I); createVariant(I);
     removeSanitizerChecks(I.Variants[0]);
-
-    // TODO(yln): not even used
-//    // 2) None
-//    createVariant(I);
-//    removeCoverage(I.Variants[2]);
-//    removeSanitizerChecks(I.Variants[2]);
+    removeSanitizerChecks(I.Variants[2]);
   }
 
   auto* DescTy = createDescTy(M);
@@ -371,37 +364,12 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I) {
   }
 }
 
-static Function* cloneFunction(Function* F) {
-  ValueToValueMapTy VMap;
-  auto* NF = CloneFunction(F, VMap);
-
-  // llvm::CloneFunction's contract says that 'it is only valid to clone a
-  // function if a block address within that function is never referenced
-  // outside of the function.'  Unfortunately, this is the case with the
-  // SanCov PC-tables. SanCov introduces new basic blocks to instrument critical
-  // edges. After we remove the SanCov instrumentation, those become empty and
-  // cause problems in StackColoring::calculateLocalLiveness: for some reason no
-  // liveness mapping was computed for them. Here we delete the only use of such
-  // empty critical edge basic blocks to allow the SimplifyCFG pass to clean
-  // them up. The code below also switches back the BlockAddresses of the
-  // SanCov instrumentation to reference the canonical variant 0, example:
-  // call void @__sanitizer_cov_trace_const_cmp8(i64 3, i64 %2, i64 ptrtoint (i8* blockaddress(@foo_1 -> 0, %entry) to i64))
-  for (auto E : VMap) {
-    if (auto* BA = dyn_cast<BlockAddress>(E.second)) {
-      if (isCoverageInstOperand(BA))
-        BA->use_begin()->set(const_cast<Value*>(E.first));
-      if (BA->use_empty())
-        BA->destroyConstant();
-    }
-  }
-  return NF;
-}
-
 void ControlFlowDiversity::createVariant(FInfo& I) {
   auto VariantNo = I.Variants.size();
 
   // Clone function
-  auto* NF = cloneFunction(I.Original);
+  ValueToValueMapTy VMap;
+  auto* NF = CloneFunction(I.Original, VMap);
   NF->setComdat(I.Original->getComdat());
   setVariantName(NF, I.Name, VariantNo);
 
@@ -411,28 +379,6 @@ void ControlFlowDiversity::createVariant(FInfo& I) {
   F->getParent()->getFunctionList().insertAfter(F->getIterator(), NF);
 
   I.Variants.push_back(NF);
-}
-
-void ControlFlowDiversity::removeCoverage(Function* F) {
-  for (auto BI = inst_begin(F), E = inst_end(F); BI != E;) {
-    auto& I = *BI++;  // Advance iterator since we might delete this instruction
-
-    if (isCoverageInst(&I)) {
-      SmallVector<Value*, 4> Operands(I.operands());
-      if (auto* B = dyn_cast<BranchInst>(&I)) {
-        assert(B->isConditional());
-        assert(isCoverageInst(&*B->getSuccessor(0)->begin()));
-        // Hard-code branch target, will be cleaned up by SimplifyCFG pass
-        // TODO(yln): above is not true anymore
-        B->setCondition(ConstantInt::getFalse(F->getContext()));
-      } else {
-        I.eraseFromParent();
-      }
-      for (auto* Op : Operands) {
-        RecursivelyDeleteTriviallyDeadInstructions(Op);
-      }
-    }
-  }
 }
 
 void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {

@@ -668,7 +668,7 @@ void Fuzzer::MutateAndTestOne() {
       if (CFR.isActive()) {
         CFR.activateFullSanitization();
         ExecuteCallback(CurrentUnitData, Size);
-        CFR.restoreSanitizationLevels();
+        CFR.restoreCoverageLevels();
       }
 
       break;  // We will mutate this input more in the next rounds.

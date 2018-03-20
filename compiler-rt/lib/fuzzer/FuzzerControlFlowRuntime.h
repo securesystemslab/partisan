@@ -60,9 +60,9 @@ public:
   };
 
 private:
-  static constexpr uint32_t V_FullSanitization = 0;
-  static constexpr uint32_t V_CoverageOnly = 1;
-  static constexpr uint32_t V_Unsanitized = 2;
+  static constexpr uint32_t V_Coverage = 0;
+  static constexpr uint32_t V_Sanitization = 1;
+  static constexpr uint32_t V_Fast = 2;
 
   std::vector<Func> Funcs;
 
@@ -73,7 +73,7 @@ public:
   void registerPC(uintptr_t EntryBlock, uintptr_t LastBlock, uint32_t NumPCs);
   void handleNewObservedPC(uintptr_t PC);
   void activateFullSanitization();
-  void restoreSanitizationLevels();
+  void restoreCoverageLevels();
   void printStats() const;
 };
 
