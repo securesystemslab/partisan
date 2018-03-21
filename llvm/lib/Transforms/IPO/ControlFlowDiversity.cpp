@@ -309,6 +309,7 @@ void ControlFlowDiversity::createTrampoline(FInfo& I) {
   I.Variants.push_back(F);
 }
 
+// TODO(yln): not needed anymore?!
 static bool isCoverageVarInit(const User* U, unsigned Level = 5) {
   if (U->getName().startswith(SanCovVarPrefix))
     return true;
@@ -316,6 +317,7 @@ static bool isCoverageVarInit(const User* U, unsigned Level = 5) {
   return Level > 0 && std::any_of(U->user_begin(), U->user_end(), Recurse);
 }
 
+// TODO(yln): not needed anymore?!
 static bool isCoverageInst(const Instruction* I) {
   return I->use_empty() && containsOperand(I, [](const Value* V) {
     return V->getName().startswith(SanCovVarPrefix)
@@ -323,6 +325,7 @@ static bool isCoverageInst(const Instruction* I) {
   });
 }
 
+// TODO(yln): not needed anymore?!
 static bool isCoverageInstOperand(const Value* V) {
   while (!isa<Instruction>(V) && V->hasOneUse()) {
     V = *V->user_begin();
@@ -489,6 +492,7 @@ StructType* ControlFlowDiversity::createDescTy(Module& M) {
   return StructType::create(C, Fields, "struct.cf_desc");
 }
 
+// TODO(yln): inline into createArray
 static Constant* createVariantPtrInit(ArrayRef<Function*> Variants, Type* PtrTy) {
   std::vector<Constant*> Elems;
   for (auto* F : Variants) {
@@ -499,6 +503,7 @@ static Constant* createVariantPtrInit(ArrayRef<Function*> Variants, Type* PtrTy)
   return ConstantArray::get(Ty, Elems);
 }
 
+// TODO(yln): Only called once, since could be specific and merged with above function: createVariantPtrArray
 static GlobalVariable* createArray(Module& M, StringRef Name, Type* ElementTy, size_t Count, Constant* Init, Comdat* Comdat) {
   auto* Ty = ArrayType::get(ElementTy, Count);
   bool isConstant = true;
@@ -509,6 +514,7 @@ static GlobalVariable* createArray(Module& M, StringRef Name, Type* ElementTy, s
   return GV;
 }
 
+// TODO(yln): inline into emitDescripton
 static Constant* createDescInit(Module& M, StructType* DescTy, FInfo& I, GlobalVariable* Variants) {
   auto& C = M.getContext();
   auto* Int32Ty = Type::getInt32Ty(C);
