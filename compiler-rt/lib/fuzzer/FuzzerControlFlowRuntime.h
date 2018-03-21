@@ -24,7 +24,7 @@ public:
   class Func {
     uintptr_t* RandLoc;
     const uintptr_t* Variants;
-    uint32_t NumVariants;
+    uint32_t NumVariants; // TODO(yln): unused
     uintptr_t LastAddress{};
     uint32_t NumPCs{};
     uint32_t NumUnobservedPCs{};

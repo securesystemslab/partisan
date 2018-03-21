@@ -9,7 +9,7 @@ namespace fuzzer {
 
 void ControlFlowRuntime::registerFunc(Func& F) {
   Funcs.push_back(F);
-  F.activateVariant(V_Coverage);
+  F.activateVariant(V_Coverage); // TODO(yln): probably not needed anymore
 }
 
 void ControlFlowRuntime::completeFuncRegistration() {

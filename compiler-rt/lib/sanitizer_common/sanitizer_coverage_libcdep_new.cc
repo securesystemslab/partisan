@@ -179,6 +179,7 @@ struct func_t {
 // void __cf_register(const func_t* start, const func_t* end)
 SANITIZER_INTERFACE_WEAK_DEF(void, __cf_register, const func_t* start, const func_t* end) {
   Printf("Code instrumented for CFD, but runtime not linked!\n");
+  // TODO(yln): probably not needed, maybe whole fuction can be scrapped?!
   // Initialize with variant 0
   for (; start < end; start++) {
     *(start->rand_loc) = start->variants[0];

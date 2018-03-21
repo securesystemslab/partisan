@@ -241,7 +241,7 @@ void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
   auto isConstant = false;
   auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage
                         : GlobalValue::PrivateLinkage;
-  auto* Init = Constant::getNullValue(Ty);
+  Constant* Init = nullptr; // Initialized later
   auto Name = "__cf_gen_randloc." + I.Name;
   auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, Name);
   GV->setExternallyInitialized(true);
@@ -550,6 +550,10 @@ void ControlFlowDiversity::emitMetadata(Module& M, FInfo &I, StructType* DescTy)
   // Emit description
   auto* DescInit = createDescInit(M, DescTy, I, Variants);
   emitDescription(M, I.Name, DescTy, DescInit, Comdat);
+
+  // Pre-initialize rand location
+  auto* Init = ConstantExpr::getPtrToInt(I.Variants[0], PtrTy);
+  I.RandLoc->setInitializer(Init);
 }
 
 static GlobalVariable* declareSectionGlobal(Module &M, StringRef Name, Type *Ty) {
