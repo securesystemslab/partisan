@@ -62,7 +62,7 @@ public:
 private:
   static constexpr uint32_t V_Coverage = 0;
   static constexpr uint32_t V_Sanitization = 1;
-  static constexpr uint32_t V_Fast = 2;
+//  static constexpr uint32_t V_Fast = 2;
 
   std::vector<Func> Funcs;
 

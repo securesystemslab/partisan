@@ -153,9 +153,9 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     // 0) Coverage (converted from original), cov only added to variant 0
     // 1) Sanitization
     // 2) Fast
-    createVariant(I); createVariant(I);
+    createVariant(I); // createVariant(I);
     removeSanitizerChecks(I.Variants[0]);
-    removeSanitizerChecks(I.Variants[2]);
+//    removeSanitizerChecks(I.Variants[2]);
   }
 
   auto* DescTy = createDescTy(M);
