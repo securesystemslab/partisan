@@ -372,6 +372,8 @@ static bool shouldRemove(const Instruction* I) {
   return I->use_empty() && isNoSanitize(I);
 }
 
+// Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs;
+// remove this instrumentation here.
 static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI) {
   constexpr unsigned BonusInstThreshold = 1;
 
@@ -394,7 +396,7 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
     // UBSan (and other sanitizers) adds branches to basic blocks that are terminated with an
     // unreachable instruction. The code below attempts to delete exactly those basic blocks.
     if (isa<TerminatorInst>(I)) {
-      BranchInst* BI = dyn_cast<BranchInst>(I);
+      auto* BI = dyn_cast<BranchInst>(I);
 
       if (BI && BI->isConditional()) {
         BasicBlock* TrueBB = BI->getSuccessor(0);
@@ -426,16 +428,15 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
       I->eraseFromParent();
     }
 
-    // Mark instructions that are no longer used
+    // Mark operands that are instructions and no longer used
     for (Value* V : Operands) {
-      Instruction* Op = dyn_cast<Instruction>(V);
+      auto* Op = dyn_cast<Instruction>(V);
       if (Op && shouldRemove(Op) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
         removed.push_back(Op);
       }
     }
   }
 
-  // TODO(yln): this shouldn't be needed anymore, since we schedule a whole run of CFGSimplifyPass
   for (auto BBIt = F->begin(); BBIt != F->end(); ) {
     BasicBlock& BB = *(BBIt++); // Advance iterator since SimplifyCFG might delete the current BB
     simplifyCFG(&BB, TTI, BonusInstThreshold);
@@ -443,12 +444,9 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
 }
 
 void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
-//  auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
+  auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
   removeSanitizerAttributes(F);
-  // removeSanitizerInstructions(F, TTI); // TODO(yln): Support UBSan
-  // This is here for sanitizers (like UBSan) that insert instrumentation, before our CFD pass.
-  // The current issue is that this also partly removes SanCov instrumentation, and
-  // has some weird interaction when simplifying CFGs that had critical edges added by SanCov.
+  removeSanitizerInstructions(F, TTI);
 }
 
 //  struct func_t {
