@@ -58,8 +58,6 @@ static cl::opt<bool> AddTracingOutput(
 
 
 namespace {
-constexpr const char* SanCovFnPrefix = "__sanitizer_cov_";
-constexpr const char* SanCovVarPrefix = "__sancov_";
 constexpr const char* CtorName = "cf.module_ctor";
 
 struct FInfo {
@@ -309,31 +307,6 @@ void ControlFlowDiversity::createTrampoline(FInfo& I) {
   I.Variants.push_back(F);
 }
 
-// TODO(yln): not needed anymore?!
-static bool isCoverageVarInit(const User* U, unsigned Level = 5) {
-  if (U->getName().startswith(SanCovVarPrefix))
-    return true;
-  auto Recurse = [Level](const User* U) { return isCoverageVarInit(U, Level - 1); };
-  return Level > 0 && std::any_of(U->user_begin(), U->user_end(), Recurse);
-}
-
-// TODO(yln): not needed anymore?!
-static bool isCoverageInst(const Instruction* I) {
-  return I->use_empty() && containsOperand(I, [](const Value* V) {
-    return V->getName().startswith(SanCovVarPrefix)
-        || V->getName().startswith(SanCovFnPrefix);
-  });
-}
-
-// TODO(yln): not needed anymore?!
-static bool isCoverageInstOperand(const Value* V) {
-  while (!isa<Instruction>(V) && V->hasOneUse()) {
-    V = *V->user_begin();
-  }
-  auto* I = dyn_cast<Instruction>(V);
-  return I && isCoverageInst(I);
-}
-
 // See [Value::replaceUsesExceptBlockAddr] for algorithm template
 void ControlFlowDiversity::randomizeCallSites(const FInfo& I) {
   auto* F = I.Original;
@@ -353,8 +326,7 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I) {
     }
     if (auto* C = dyn_cast<Constant>(U.getUser())) {
       if (!isa<GlobalValue>(C)) {
-        if (!isa<BlockAddress>(C) &&
-            !isCoverageVarInit(C) && !isCoverageInstOperand(C))
+        if (!isa<BlockAddress>(C)) // TODO(yln): audit this
           Constants.insert(C);
         continue;
       }
