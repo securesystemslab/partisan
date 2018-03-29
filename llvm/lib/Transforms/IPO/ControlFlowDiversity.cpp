@@ -247,10 +247,20 @@ void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
   I.RandLoc = GV;
 }
 
+static bool isNoSanitize(const Instruction& I) {
+  return I.getMetadata("nosanitize") != nullptr;
+}
+
+static void setNoSanitize(Instruction& I) {
+  I.setMetadata("nosanitize", MDNode::get(I.getContext(), None));
+}
+
 static LoadInst* loadVariantPtr(const FInfo& I, IRBuilder<>& B) {
   auto* PtrTy = I.Original->getFunctionType()->getPointerTo()->getPointerTo();
   auto* Ptr = B.CreateBitCast(I.RandLoc, PtrTy);
-  return B.CreateLoad(Ptr, I.Name +"_ptr");
+  auto* Load = B.CreateLoad(Ptr, I.Name + "_ptr");
+  setNoSanitize(*Load); // Prevent ASAN from instrumenting the load
+  return Load;
 
 // TODO(yln): should it be volatile, atomic, etc..?
 // Hints for the optimizer -- possible optimizations?
@@ -364,12 +374,8 @@ void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
   F->removeFnAttr(Attribute::SafeStack);
 }
 
-static bool isNoSanitize(const Instruction* I) {
-  return I->getMetadata("nosanitize") != nullptr;
-}
-
-static bool shouldRemove(const Instruction* I) {
-  return I->use_empty() && isNoSanitize(I);
+static bool shouldRemove(const Instruction& I) {
+  return I.use_empty() && isNoSanitize(I);
 }
 
 // Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs;
@@ -379,8 +385,8 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
 
   // Mark initial set of instructions for removal
   std::vector<Instruction*> removed;
-  for (Instruction& I : instructions(*F)) {
-    if (shouldRemove(&I)) {
+  for (auto& I : instructions(*F)) {
+    if (shouldRemove(I)) {
       removed.push_back(&I);
     }
   }
@@ -407,9 +413,9 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
         TerminatorInst* FalseTI = FalseBB->getTerminator();
 
         // Short-circuit conditional branch if a successor block terminates with unreachable
-        if (TrueTI && isa<UnreachableInst>(TrueTI) && isNoSanitize(TrueTI)) {
+        if (TrueTI && isa<UnreachableInst>(TrueTI) && isNoSanitize(*TrueTI)) {
           BI->setCondition(ConstantInt::getFalse(F->getContext()));
-        } else if (FalseTI && isa<UnreachableInst>(FalseTI) && isNoSanitize(FalseTI)) {
+        } else if (FalseTI && isa<UnreachableInst>(FalseTI) && isNoSanitize(*FalseTI)) {
           BI->setCondition(ConstantInt::getTrue(F->getContext()));
         }
 
@@ -431,7 +437,7 @@ static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& 
     // Mark operands that are instructions and no longer used
     for (Value* V : Operands) {
       auto* Op = dyn_cast<Instruction>(V);
-      if (Op && shouldRemove(Op) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
+      if (Op && shouldRemove(*Op) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
         removed.push_back(Op);
       }
     }
