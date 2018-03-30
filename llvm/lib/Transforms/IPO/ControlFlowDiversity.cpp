@@ -58,7 +58,14 @@ static cl::opt<bool> AddTracingOutput(
 
 
 namespace {
+constexpr const char* InitName = "__cf_register";
 constexpr const char* CtorName = "cf.module_ctor";
+constexpr const char* RandLocPrefix = "__cf_gen_randloc.";
+constexpr const char* VariantsPrefix = "__cf_gen_variants.";
+constexpr const char* DescPrefix = "__cf_gen_desc.";
+constexpr const char* DescSectionName = "__cf_gen_desc";
+constexpr const char* VariantAttr = "cf-variant";
+constexpr const char* TrampolineAttr = "cf-trampoline";
 
 struct FInfo {
   Function* const Original;
@@ -242,7 +249,7 @@ void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
   auto Linkage = Comdat ? GlobalValue::LinkOnceODRLinkage
                         : GlobalValue::PrivateLinkage;
   Constant* Init = nullptr; // Initialized later
-  auto Name = "__cf_gen_randloc." + I.Name;
+  auto Name = RandLocPrefix + I.Name;
   auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, Name);
   GV->setExternallyInitialized(true);
   GV->setComdat(Comdat);
@@ -289,7 +296,7 @@ static void createTrampolineBody(FInfo &I) {
 static void setVariantName(Function* F, StringRef Name, unsigned VariantNo) {
   auto N = std::to_string(VariantNo);
   F->setName(Name +"_"+ N);
-  F->addFnAttr("cf-variant", N);
+  F->addFnAttr(VariantAttr, N);
 }
 
 void ControlFlowDiversity::createTrampoline(FInfo& I) {
@@ -300,7 +307,7 @@ void ControlFlowDiversity::createTrampoline(FInfo& I) {
   NF->takeName(F);
   NF->copyAttributesFrom(F);
   removeSanitizerAttributes(NF);
-  NF->addFnAttr("cf-trampoline");
+  NF->addFnAttr(TrampolineAttr);
   NF->setComdat(F->getComdat());
   createTrampolineBody(I);
   F->getParent()->getFunctionList().insert(F->getIterator(), NF);
@@ -461,7 +468,7 @@ static bool isVariantPtrLoad(const Instruction& I) {
   // Load -> Cast -> RandLoc global
   if (auto* Load = dyn_cast<LoadInst>(&I))
     if (auto* Cast = dyn_cast<VariantPtrCast>(Load->getPointerOperand()))
-      return Cast->getOperand(0)->getName().startswith("__cf_gen_randloc.");
+      return Cast->getOperand(0)->getName().startswith(RandLocPrefix);
   return false;
 }
 
@@ -502,7 +509,7 @@ static GlobalVariable* createArray(Module& M, StringRef Name, Type* ElementTy, s
   auto* Ty = ArrayType::get(ElementTy, Count);
   bool isConstant = true;
   auto Linkage = GlobalValue::PrivateLinkage;
-  auto N = "__cf_gen_variants." + Name;
+  auto N = VariantsPrefix + Name;
   auto* GV = new GlobalVariable(M, Ty, isConstant, Linkage, Init, N);
   GV->setComdat(Comdat);
   return GV;
@@ -525,10 +532,10 @@ static void emitDescription(Module& M, StringRef Name, StructType* DescTy, Const
   auto& DL = M.getDataLayout();
   auto isConstant = true;
   auto Linkage = GlobalValue::PrivateLinkage;
-  auto N = "__cf_gen_desc." + Name;
+  auto N = DescPrefix + Name;
   auto* GV = new GlobalVariable(M, DescTy, isConstant, Linkage, Init, N);
   GV->setComdat(Comdat);
-  GV->setSection("__cf_gen_desc");
+  GV->setSection(DescSectionName);
   GV->setAlignment(DL.getPointerSize());
 }
 
@@ -550,7 +557,7 @@ void ControlFlowDiversity::emitMetadata(Module& M, FInfo &I, StructType* DescTy)
   I.RandLoc->setInitializer(Init);
 }
 
-static GlobalVariable* declareSectionGlobal(Module &M, StringRef Name, Type *Ty) {
+static GlobalVariable* declareSectionGlobal(Module &M, const Twine& Name, Type *Ty) {
   auto Linkage = GlobalValue::ExternalLinkage;
   auto* GV = new GlobalVariable(M, Ty, /* isConstant */ false,
                                 Linkage, /* Initializer */ nullptr, Name);
@@ -559,9 +566,10 @@ static GlobalVariable* declareSectionGlobal(Module &M, StringRef Name, Type *Ty)
 }
 
 void ControlFlowDiversity::createModuleCtor(Module& M, StructType* DescTy) {
+  StringRef SN(DescSectionName);
   auto* DescPtrTy = DescTy->getPointerTo();
-  auto* Start = declareSectionGlobal(M, "__start___cf_gen_desc" , DescPtrTy);
-  auto* End = declareSectionGlobal(M, "__stop___cf_gen_desc" , DescPtrTy);
+  auto* Start = declareSectionGlobal(M, "__start_" + SN, DescPtrTy);
+  auto* End = declareSectionGlobal(M, "__stop_" + SN, DescPtrTy);
 
   // void __cf_register(const func_t* start, const func_t* end)
   Type* ArgTys[]{DescPtrTy, DescPtrTy};
@@ -572,7 +580,7 @@ void ControlFlowDiversity::createModuleCtor(Module& M, StructType* DescTy) {
 
   Function* Ctor;
   std::tie(Ctor, std::ignore) = llvm::createSanitizerCtorAndInitFunctions(
-      M, CtorName, "__cf_register", ArgTys, Args);
+      M, CtorName, InitName, ArgTys, Args);
   Ctor->setComdat(M.getOrInsertComdat(CtorName)); // Deduplicate ctor
   appendToGlobalCtors(M, Ctor, /* Priority */ 0, Ctor);
 }
@@ -717,7 +725,7 @@ void ControlFlowDiversity::addTraceStatements(Function* F) {
         ConstantExpr* gep = dyn_cast<ConstantExpr>(load->getOperand(0));
         if (!gep || gep->getNumOperands() != 3) continue;
         GlobalVariable* var = dyn_cast<GlobalVariable>(gep->getOperand(0));
-        if (!var->getName().startswith("__cf_gen_randloc.")) continue;
+        if (!var->getName().startswith(RandLocPrefix)) continue;
 
         insertTraceFPrintf(M, "returned to "+ FName, "return_"+ FName, I.getNextNode());
       }
