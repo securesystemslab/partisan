@@ -318,36 +318,27 @@ void ControlFlowDiversity::createTrampoline(FInfo& I) {
   I.Variants.push_back(F);
 }
 
-// See [Value::replaceUsesExceptBlockAddr] for algorithm template
 void ControlFlowDiversity::randomizeCallSites(const FInfo& I) {
   auto* F = I.Original;
 //  F->removeDeadConstantUsers(); // TODO(yln): needed?
 
-  SmallPtrSet<Constant*, 8> Constants;
-  for (auto UI = F->use_begin(), E = F->use_end(); UI != E;) {
-    auto& U = *UI++; // Advance iterator since we might remove this use
-
-    if (auto CS = CallSite(U.getUser())) {
-      if (CS.getCalledFunction() == F) {
-        IRBuilder<> B(CS.getInstruction());
-        auto* VarPtr = loadVariantPtr(I, B);
-        CS.setCalledFunction(VarPtr);
-        continue;
-      }
-    }
-    if (auto* C = dyn_cast<Constant>(U.getUser())) {
-      if (!isa<GlobalValue>(C)) {
-        if (!isa<BlockAddress>(C)) // TODO(yln): audit this
-          Constants.insert(C);
-        continue;
-      }
-    }
-    U.set(I.Trampoline);
+  // Collect call sites
+  std::vector<CallSite> CallSites;
+  for (auto* U : F->users()) {
+    CallSite CS(U);
+    if (CS && CS.getCalledFunction() == F)
+      CallSites.push_back(CS);
   }
 
-  for (auto* C : Constants) {
-    C->handleOperandChange(F, I.Trampoline);
+  // Transform call sites
+  for (auto CS : CallSites) {
+    IRBuilder<> B(CS.getInstruction());
+    auto* VarPtr = loadVariantPtr(I, B);
+    CS.setCalledFunction(VarPtr);
   }
+
+  // Replace remaining call sites
+  F->replaceAllUsesWith(I.Trampoline);
 }
 
 void ControlFlowDiversity::createVariant(FInfo& I) {
