@@ -90,6 +90,7 @@ private:
   void createVariant(FInfo& I);
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerChecks(Function* F);
+  void setNoSanitizeForCfdInstructions(Function* F);
   StructType* createDescTy(Module& M);
   void emitMetadata(Module& M, FInfo& I, StructType* DescTy);
   void createModuleCtor(Module &M, StructType *DescTy);
@@ -141,6 +142,7 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     // 2) Fast
     createVariant(I); createVariant(I);
     removeSanitizerChecks(I.Variants[0]);
+    setNoSanitizeForCfdInstructions(I.Variants[1]);
     removeSanitizerChecks(I.Variants[2]);
   }
 
@@ -247,20 +249,12 @@ void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
   I.RandLoc = GV;
 }
 
-static bool isNoSanitize(const Instruction& I) {
-  return I.getMetadata("nosanitize") != nullptr;
-}
-
-static void setNoSanitize(Instruction& I) {
-  I.setMetadata("nosanitize", MDNode::get(I.getContext(), None));
-}
-
+using VariantPtrCast = BitCastOperator;
 static LoadInst* loadVariantPtr(const FInfo& I, IRBuilder<>& B) {
   auto* PtrTy = I.Original->getFunctionType()->getPointerTo()->getPointerTo();
   auto* Ptr = B.CreateBitCast(I.RandLoc, PtrTy);
-  auto* Load = B.CreateLoad(Ptr, I.Name + "_ptr");
-  setNoSanitize(*Load); // Prevent ASAN from instrumenting the load
-  return Load;
+  assert(isa<VariantPtrCast>(Ptr));
+  return B.CreateLoad(Ptr, I.Name + "_ptr");
 
 // TODO(yln): should it be volatile, atomic, etc..?
 // Hints for the optimizer -- possible optimizations?
@@ -374,6 +368,14 @@ void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
   F->removeFnAttr(Attribute::SafeStack);
 }
 
+static bool isNoSanitize(const Instruction& I) {
+  return I.getMetadata("nosanitize") != nullptr;
+}
+
+static void setNoSanitize(Instruction& I) {
+  I.setMetadata("nosanitize", MDNode::get(I.getContext(), None));
+}
+
 static bool shouldRemove(const Instruction& I) {
   return I.use_empty() && isNoSanitize(I);
 }
@@ -453,6 +455,22 @@ void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
   auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
   removeSanitizerAttributes(F);
   removeSanitizerInstructions(F, TTI);
+}
+
+static bool isVariantPtrLoad(const Instruction& I) {
+  // Load -> Cast -> RandLoc global
+  if (auto* Load = dyn_cast<LoadInst>(&I))
+    if (auto* Cast = dyn_cast<VariantPtrCast>(Load->getPointerOperand()))
+      return Cast->getOperand(0)->getName().startswith("__cf_gen_randloc.");
+  return false;
+}
+
+void ControlFlowDiversity::setNoSanitizeForCfdInstructions(Function* F) {
+  for (auto& I : instructions(*F)) {
+    if (isVariantPtrLoad(I)) {
+      setNoSanitize(I);
+    }
+  }
 }
 
 //  struct func_t {
