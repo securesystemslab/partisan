@@ -215,6 +215,9 @@ private:
   std::pair<GlobalVariable *, GlobalVariable *>
   CreateSecStartEnd(Module &M, const char *Section, Type *Ty);
 
+  bool isNoSanitize(const Instruction *I) {
+    return I->getMetadata("nosanitize") != nullptr;
+  }
   void SetNoSanitizeMetadata(Instruction *I) {
     I->setMetadata(I->getModule()->getMDKindID("nosanitize"),
                    MDNode::get(*C, None));
@@ -512,7 +515,7 @@ bool SanitizerCoverageModule::runOnFunction(Function &F) {
     for (auto &Inst : BB) {
       if (Options.IndirectCalls) {
         CallSite CS(&Inst);
-        if (CS && !CS.getCalledFunction())
+        if (CS && !CS.getCalledFunction() && !isNoSanitize(&Inst))
           IndirCalls.push_back(&Inst);
       }
       if (Options.TraceCmp) {
