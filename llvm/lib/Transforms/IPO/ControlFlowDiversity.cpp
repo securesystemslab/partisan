@@ -96,6 +96,7 @@ private:
   void randomizeCallSites(const FInfo& I);
   void createVariant(FInfo& I);
   void removeSanitizerAttributes(Function* F);
+  void removeSanitizerInstructions(Function* F);
   void removeSanitizerChecks(Function* F);
   void setNoSanitizeForCfdInstructions(Function* F);
   StructType* createDescTy(Module& M);
@@ -115,6 +116,7 @@ ModulePass* llvm::createControlFlowDiversityPass() {
 
 void ControlFlowDiversity::getAnalysisUsage(AnalysisUsage& AU) const {
   AU.addRequired<TargetTransformInfoWrapperPass>();
+  AU.addRequired<TargetLibraryInfoWrapperPass>();
   ModulePass::getAnalysisUsage(AU);
 }
 
@@ -380,79 +382,45 @@ static bool shouldRemove(const Instruction& I) {
 
 // Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs;
 // remove this instrumentation here.
-static void removeSanitizerInstructions(Function* F, const TargetTransformInfo& TTI) {
-  constexpr unsigned BonusInstThreshold = 1;
+void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
+  auto& C = F->getContext();
 
-  // Mark initial set of instructions for removal
-  std::vector<Instruction*> removed;
-  for (auto& I : instructions(*F)) {
-    if (shouldRemove(I)) {
-      removed.push_back(&I);
+  // UBSan (and others) add branches to basic blocks that are terminated with an
+  // unreachable instruction. Must compile with -fno-sanitize-recover=all.
+  for (auto& I : instructions(F)) {
+    // UBSan (and others) only insert conditional branches
+    auto* BI = dyn_cast<BranchInst>(&I);
+    bool Remove = BI && BI->isConditional() && isNoSanitize(*BI);
+    if (!Remove) continue;
+
+    auto* TrueTI = BI->getSuccessor(0)->getTerminator();
+    auto* FalseTI = BI->getSuccessor(1)->getTerminator();
+
+    // Short-circuit condition if a successor block terminates with unreachable
+    if (isa<UnreachableInst>(TrueTI)) {
+      BI->setCondition(ConstantInt::getFalse(C));
+    } else if (isa<UnreachableInst>(FalseTI)) {
+      BI->setCondition(ConstantInt::getTrue(C));
     }
   }
 
-  while (!removed.empty()) {
-    // We must delete instructions in a bottom-up fashion
-    Instruction* I = removed.back();
-    removed.pop_back();
-
-    // Keep a reference to the instruction operands (the instruction itself might get deleted)
-    std::vector<Value*> Operands(I->op_begin(), I->op_end());
-
-    // UBSan (and other sanitizers) adds branches to basic blocks that are terminated with an
-    // unreachable instruction. The code below attempts to delete exactly those basic blocks.
-    if (isa<TerminatorInst>(I)) {
-      auto* BI = dyn_cast<BranchInst>(I);
-
-      if (BI && BI->isConditional()) {
-        BasicBlock* TrueBB = BI->getSuccessor(0);
-        BasicBlock* FalseBB = BI->getSuccessor(1);
-        assert(TrueBB && FalseBB);
-
-        TerminatorInst* TrueTI = TrueBB->getTerminator();
-        TerminatorInst* FalseTI = FalseBB->getTerminator();
-
-        // Short-circuit conditional branch if a successor block terminates with unreachable
-        if (TrueTI && isa<UnreachableInst>(TrueTI) && isNoSanitize(*TrueTI)) {
-          BI->setCondition(ConstantInt::getFalse(F->getContext()));
-        } else if (FalseTI && isa<UnreachableInst>(FalseTI) && isNoSanitize(*FalseTI)) {
-          BI->setCondition(ConstantInt::getTrue(F->getContext()));
-        }
-
-        // Attempt to prune BB, if it only contains the terminator
-        if (TrueBB->size() == 1 || FalseBB->size() == 1) {
-          simplifyCFG(BI->getParent(), TTI, BonusInstThreshold);
-          simplifyCFG(TrueBB, TTI, BonusInstThreshold);
-          simplifyCFG(FalseBB, TTI, BonusInstThreshold);
-        }
-      } else {
-        // We ignore other control flow since UBSan (and other sanitizers) only inserts branches
-        assert(isa<TerminatorInst>(I));
-        assert(BI == nullptr || !BI->isConditional());
-      }
-    } else {
-      I->eraseFromParent();
-    }
-
-    // Mark operands that are instructions and no longer used
-    for (Value* V : Operands) {
-      auto* Op = dyn_cast<Instruction>(V);
-      if (Op && shouldRemove(*Op) && std::find(removed.begin(), removed.end(), Op) == removed.end()) {
-        removed.push_back(Op);
-      }
-    }
+  // Remove dangling basic blocks
+  auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
+  for (auto It = F->begin(); It != F->end(); ) {
+    auto& BB = *It++; // Advance iterator since SimplifyCFG might delete the current BB
+    simplifyCFG(&BB, TTI);
   }
 
-  for (auto BBIt = F->begin(); BBIt != F->end(); ) {
-    BasicBlock& BB = *(BBIt++); // Advance iterator since SimplifyCFG might delete the current BB
-    simplifyCFG(&BB, TTI, BonusInstThreshold);
+  // Remove dead instructions
+  auto& TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
+  for (auto& BB : *F) {
+    SimplifyInstructionsInBlock(&BB, &TLI);
   }
 }
 
 void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
-  auto& TTI = getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*F);
   removeSanitizerAttributes(F);
-  removeSanitizerInstructions(F, TTI);
+  removeSanitizerInstructions(F);
 }
 
 static bool isVariantPtrLoad(const Instruction& I) {
