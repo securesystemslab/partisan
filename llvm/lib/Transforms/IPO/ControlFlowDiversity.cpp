@@ -97,12 +97,16 @@ private:
   void createVariant(FInfo& I);
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerInstructions(Function* F);
-  void removeSanitizerChecks(Function* F);
   void setNoSanitizeForCfdInstructions(Function* F);
   StructType* createDescTy(Module& M);
   void emitMetadata(Module& M, FInfo& I, StructType* DescTy);
   void createModuleCtor(Module &M, StructType *DescTy);
   void addTraceStatements(Function* F);
+
+  void removeSanitizerChecks(Function *F) {
+    removeSanitizerAttributes(F);
+    removeSanitizerInstructions(F);
+  }
 };
 } // namespace
 
@@ -376,10 +380,6 @@ static void setNoSanitize(Instruction& I) {
   I.setMetadata("nosanitize", MDNode::get(I.getContext(), None));
 }
 
-static bool shouldRemove(const Instruction& I) {
-  return I.use_empty() && isNoSanitize(I);
-}
-
 // Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs;
 // remove this instrumentation here.
 void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
@@ -416,11 +416,6 @@ void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
   for (auto& BB : *F) {
     SimplifyInstructionsInBlock(&BB, &TLI);
   }
-}
-
-void ControlFlowDiversity::removeSanitizerChecks(Function* F) {
-  removeSanitizerAttributes(F);
-  removeSanitizerInstructions(F);
 }
 
 static bool isVariantPtrLoad(const Instruction& I) {
