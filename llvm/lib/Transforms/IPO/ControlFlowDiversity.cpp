@@ -155,8 +155,9 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     // 2) Fast
     createVariant(I); createVariant(I);
     removeSanitizerChecks(I.Variants[0]);
-    setNoSanitizeForCfdInstructions(I.Variants[1]);
     removeSanitizerChecks(I.Variants[2]);
+    setNoSanitizeForCfdInstructions(I.Variants[0]); // Prevent coverage instrumentation
+    setNoSanitizeForCfdInstructions(I.Variants[1]); // Prevent sanitization
   }
 
   auto* DescTy = createDescTy(M);
