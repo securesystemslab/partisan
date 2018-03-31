@@ -219,6 +219,7 @@ static bool hasMemoryAccess(const Function& F) {
 static bool shouldRandomize(const Function& F) {
   return !F.hasFnAttribute(Attribute::NoControlFlowDiversity)
       && !F.doesNotReturn()
+      && !F.hasPrologueData() // TODO(yln): UBSAN + prolog data causes linking issues
       && !isModuleCtor(F)
       && isHotEnough(F)
       && hasMemoryAccess(F);
