@@ -58,6 +58,7 @@ static cl::opt<bool> AddTracingOutput(
 
 
 namespace {
+constexpr const char* UBSanHandlerPrefix = "__ubsan_handle_";
 constexpr const char* InitName = "__cf_register";
 constexpr const char* CtorName = "cf.module_ctor";
 constexpr const char* RandLocPrefix = "__cf_gen_randloc.";
@@ -382,26 +383,33 @@ static void setNoSanitize(Instruction& I) {
   I.setMetadata("nosanitize", MDNode::get(I.getContext(), None));
 }
 
-// Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs;
-// remove this instrumentation here.
+static bool containsSanitizerCall(const BasicBlock& BB) {
+  return std::any_of(BB.begin(), BB.end(), [](const Instruction& I) {
+    ImmutableCallSite CS(&I);
+    return CS && CS.getCalledFunction()
+        && CS.getCalledFunction()->getName().startswith(UBSanHandlerPrefix);
+  });
+}
+
+// Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs.
 void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
   auto& C = F->getContext();
 
-  // UBSan (and others) add branches to basic blocks that are terminated with an
-  // unreachable instruction. Must compile with -fno-sanitize-recover=all.
+  // UBSan (and others) add branches to basic blocks that contain sanitizer
+  // report/abort handler calls
   for (auto& I : instructions(F)) {
     // UBSan (and others) only insert conditional branches
     auto* BI = dyn_cast<BranchInst>(&I);
     bool Remove = BI && BI->isConditional() && isNoSanitize(*BI);
     if (!Remove) continue;
 
-    auto* TrueTI = BI->getSuccessor(0)->getTerminator();
-    auto* FalseTI = BI->getSuccessor(1)->getTerminator();
+    auto* TrueBB = BI->getSuccessor(0);
+    auto* FalseBB = BI->getSuccessor(1);
 
-    // Short-circuit condition if a successor block terminates with unreachable
-    if (isa<UnreachableInst>(TrueTI)) {
+    // Short-circuit condition if we find sanitizer control flow
+    if (containsSanitizerCall(*TrueBB)) {
       BI->setCondition(ConstantInt::getFalse(C));
-    } else if (isa<UnreachableInst>(FalseTI)) {
+    } else if (containsSanitizerCall(*FalseBB)) {
       BI->setCondition(ConstantInt::getTrue(C));
     }
   }
