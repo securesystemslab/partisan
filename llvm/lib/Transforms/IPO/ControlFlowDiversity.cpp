@@ -432,9 +432,10 @@ void ControlFlowDiversity::setNoSanitizeForCfdInstructions(Function* F) {
   for (auto& I : instructions(*F)) {
     if (isVariantPtrLoad(I)) {
       assert(I.hasOneUse());
-      auto* Call = cast<CallInst>(*I.user_begin());
+      CallSite CS(*I.user_begin());
+      assert(CS);
       setNoSanitize(I);
-      setNoSanitize(*Call);
+      setNoSanitize(*CS.getInstruction());
     }
   }
 }
