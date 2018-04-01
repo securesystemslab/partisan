@@ -98,7 +98,6 @@ private:
   void createVariant(FInfo& I);
   void removeSanitizerAttributes(Function* F);
   void removeSanitizerInstructions(Function* F);
-  void setNoSanitizeForCfdInstructions(Function* F);
   StructType* createDescTy(Module& M);
   void emitMetadata(Module& M, FInfo& I, StructType* DescTy);
   void createModuleCtor(Module &M, StructType *DescTy);
@@ -157,8 +156,6 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     createVariant(I); createVariant(I);
     removeSanitizerChecks(I.Variants[0]);
     removeSanitizerChecks(I.Variants[2]);
-    setNoSanitizeForCfdInstructions(I.Variants[0]); // Prevent coverage instrumentation
-    setNoSanitizeForCfdInstructions(I.Variants[1]); // Prevent sanitization
   }
 
   auto* DescTy = createDescTy(M);
@@ -265,11 +262,9 @@ void ControlFlowDiversity::createRandLocation(Module& M, FInfo& I) {
   I.RandLoc = GV;
 }
 
-using VariantPtrCast = BitCastOperator;
 static LoadInst* loadVariantPtr(const FInfo& I, IRBuilder<>& B) {
   auto* PtrTy = I.Original->getFunctionType()->getPointerTo()->getPointerTo();
   auto* Ptr = B.CreateBitCast(I.RandLoc, PtrTy);
-  assert(isa<VariantPtrCast>(Ptr));
   return B.CreateLoad(Ptr, I.Name + "_ptr");
 
 // TODO(yln): should it be volatile, atomic, etc..?
@@ -327,6 +322,14 @@ void ControlFlowDiversity::createTrampoline(FInfo& I) {
   I.Variants.push_back(F);
 }
 
+static bool isNoSanitize(const Instruction& I) {
+  return I.getMetadata("nosanitize") != nullptr;
+}
+
+static void setNoSanitize(Instruction& I) {
+  I.setMetadata("nosanitize", MDNode::get(I.getContext(), None));
+}
+
 void ControlFlowDiversity::randomizeCallSites(const FInfo& I) {
   auto* F = I.Original;
 //  F->removeDeadConstantUsers(); // TODO(yln): needed?
@@ -344,6 +347,10 @@ void ControlFlowDiversity::randomizeCallSites(const FInfo& I) {
     IRBuilder<> B(CS.getInstruction());
     auto* VarPtr = loadVariantPtr(I, B);
     CS.setCalledFunction(VarPtr);
+
+    // Prevent sanitization
+    setNoSanitize(*VarPtr);
+    setNoSanitize(*CS.getInstruction());
   }
 
   // Replace remaining call sites
@@ -375,14 +382,6 @@ void ControlFlowDiversity::removeSanitizerAttributes(Function* F) {
   F->removeFnAttr(Attribute::SafeStack);
 }
 
-static bool isNoSanitize(const Instruction& I) {
-  return I.getMetadata("nosanitize") != nullptr;
-}
-
-static void setNoSanitize(Instruction& I) {
-  I.setMetadata("nosanitize", MDNode::get(I.getContext(), None));
-}
-
 static bool containsSanitizerCall(const BasicBlock& BB) {
   return std::any_of(BB.begin(), BB.end(), [](const Instruction& I) {
     ImmutableCallSite CS(&I);
@@ -391,7 +390,8 @@ static bool containsSanitizerCall(const BasicBlock& BB) {
   });
 }
 
-// Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs.
+// Some sanitizers (e.g., UBSan) instrument code before our CFD pass runs;
+// remove these instructions here.
 void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
   auto& C = F->getContext();
 
@@ -425,28 +425,6 @@ void ControlFlowDiversity::removeSanitizerInstructions(Function* F) {
   auto& TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
   for (auto& BB : *F) {
     SimplifyInstructionsInBlock(&BB, &TLI);
-  }
-}
-
-static bool isVariantPtrLoad(const Instruction& I) {
-  // Load -> Cast -> RandLoc global
-  if (auto* Load = dyn_cast<LoadInst>(&I))
-    if (auto* Cast = dyn_cast<VariantPtrCast>(Load->getPointerOperand()))
-      return Cast->getOperand(0)->getName().startswith(RandLocPrefix);
-  return false;
-}
-
-void ControlFlowDiversity::setNoSanitizeForCfdInstructions(Function* F) {
-  for (auto& I : instructions(*F)) {
-    if (isVariantPtrLoad(I)) {
-      setNoSanitize(I);
-      assert(I.hasNUsesOrMore(1));
-      for (auto* U : I.users()) {
-        CallSite CS(U);
-        assert(CS && CS.getCalledValue() == &I);
-        setNoSanitize(*CS.getInstruction());
-      }
-    }
   }
 }
 
