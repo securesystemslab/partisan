@@ -431,11 +431,13 @@ static bool isVariantPtrLoad(const Instruction& I) {
 void ControlFlowDiversity::setNoSanitizeForCfdInstructions(Function* F) {
   for (auto& I : instructions(*F)) {
     if (isVariantPtrLoad(I)) {
-      assert(I.hasOneUse());
-      CallSite CS(*I.user_begin());
-      assert(CS);
       setNoSanitize(I);
-      setNoSanitize(*CS.getInstruction());
+      assert(I.hasNUsesOrMore(1));
+      for (auto* U : I.users()) {
+        CallSite CS(U);
+        assert(CS && CS.getCalledValue() == &I);
+        setNoSanitize(*CS.getInstruction());
+      }
     }
   }
 }
