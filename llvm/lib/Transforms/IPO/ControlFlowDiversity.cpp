@@ -31,6 +31,11 @@ using namespace llvm;
 //  cl::desc("Minimum required entry count for a function to be diversified"),
 //  cl::init(10));
 
+static cl::opt<unsigned> VariantCount(
+  "variant-count",
+  cl::desc("Generate specified number of variants"),
+  cl::init(3));
+
 enum class ByHotness { All, IgnoreCold, OnlyHot };
 static cl::opt<ByHotness> DiversifyByHotness(
   "diversify-by-hotness",
@@ -153,9 +158,10 @@ bool ControlFlowDiversity::runOnModule(Module& M) {
     // 0) Coverage (converted from original), cov only added to variant 0
     // 1) Sanitization
     // 2) Fast
-    createVariant(I); createVariant(I);
+    createVariant(I);
+    if (VariantCount == 3) createVariant(I);
     removeSanitizerChecks(I.Variants[0]);
-    removeSanitizerChecks(I.Variants[2]);
+    if (VariantCount == 3) removeSanitizerChecks(I.Variants[2]);
   }
 
   auto* DescTy = createDescTy(M);
