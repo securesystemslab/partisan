@@ -61,7 +61,7 @@ void ControlFlowRuntime::activateFullCoverage() {
 void ControlFlowRuntime::restoreCoverageLevels() {
   assert(isActive());
   for (auto& F : Funcs) {
-    auto V = F.isFullyExplored() ? V_Fast : V_Coverage;
+    auto V = (F.isFullyExplored() && F.variantCount() >= 3) ? V_Fast : V_Coverage;
     F.activateVariant(V);
   }
 }

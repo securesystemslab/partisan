@@ -24,7 +24,7 @@ public:
   class Func {
     uintptr_t* RandLoc;
     const uintptr_t* Variants;
-    uint32_t NumVariants; // TODO(yln): unused
+    uint32_t NumVariants;
     uintptr_t LastAddress{};
     uint32_t NumPCs{};
     uint32_t NumUnobservedPCs{};
@@ -42,6 +42,7 @@ public:
     bool operator<(const Func& F) const { return address() < F.address(); }
     bool operator==(const Func& F) const { return address() == F.address(); }
 
+    uint32_t variantCount() const { return NumVariants; }
     uintptr_t address() const { return Variants[0]; }
     uintptr_t lastAddress() const { return LastAddress; }
 
