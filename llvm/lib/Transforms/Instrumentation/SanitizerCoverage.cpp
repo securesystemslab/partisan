@@ -510,12 +510,9 @@ bool SanitizerCoverageModule::runOnFunction(Function &F) {
   bool IsLeafFunc = true;
 
   for (auto &BB : F) {
-    bool AllNoSanitize = true;
-
+    if (shouldInstrumentBlock(F, &BB, DT, PDT, Options))
+      BlocksToInstrument.push_back(&BB);
     for (auto &Inst : BB) {
-      if (isNoSanitize(&Inst)) continue;
-      AllNoSanitize = false;
-
       if (Options.IndirectCalls) {
         CallSite CS(&Inst);
         if (CS && !CS.getCalledFunction() && !isNoSanitize(&Inst))
@@ -540,9 +537,6 @@ bool SanitizerCoverageModule::runOnFunction(Function &F) {
             (isa<CallInst>(Inst) && !isa<IntrinsicInst>(Inst)))
           IsLeafFunc = false;
     }
-
-    if (!AllNoSanitize && shouldInstrumentBlock(F, &BB, DT, PDT, Options))
-      BlocksToInstrument.push_back(&BB);
   }
 
   InjectCoverage(F, BlocksToInstrument, IsLeafFunc);
