@@ -34,6 +34,7 @@ using namespace llvm;
 static cl::opt<unsigned> VariantCount(
   "variant-count",
   cl::desc("Generate specified number of variants"),
+  cl::ZeroOrMore,   // Workaround for stupid build systems
   cl::init(3));
 
 enum class ByHotness { All, IgnoreCold, OnlyHot };
